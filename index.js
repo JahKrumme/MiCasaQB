@@ -138,10 +138,11 @@ async function runOverdueCheck() {
     return { status: 'no-token' };
   }
   const today = new Date();
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
   const todayStr = today.toISOString().split('T')[0];
   let data;
   try {
-    data = await qbQuery(`SELECT * FROM Invoice WHERE Balance > '0' AND DueDate < '${todayStr}'`);
+    data = await qbQuery(`SELECT * FROM Invoice WHERE Balance > '0' AND DueDate < '${firstOfMonth}'`);
   } catch (e) {
     console.log('QB token expired — re-authorization needed');
     return { status: 'token-error', message: e.message };
@@ -228,7 +229,7 @@ app.get('/run-check', async (req, res) => {
       return res.status(503).send('QB token expired — visit <a href="/connect">/connect</a> to re-authorize.');
     }
     if (result.count === 0) {
-      return res.send('Check complete — no overdue invoices found.');
+      return res.send('Check complete — no invoices past due before the 1st of this month.');
     }
     res.send(`Check complete — ${result.count} overdue invoice(s), $${result.total.toFixed(2)} total. Email sent.`);
   } catch (e) {
@@ -345,6 +346,8 @@ async function runMonthlyInvoices() {
   const now = new Date();
   const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
   const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const nextMonthLabel = nextMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
   const monthLabel = now.toLocaleString('default', { month: 'long', year: 'numeric' });
 
   let data;
@@ -374,8 +377,9 @@ async function runMonthlyInvoices() {
 
   const html = `
     <div style="font-family:sans-serif;max-width:700px;margin:0 auto;padding:24px">
-      <h2 style="color:#1a1a1a">Mi Casa — Monthly Invoice Summary</h2>
-      <p style="color:#555"><strong>${monthLabel}</strong> — ${invoices.length} invoice(s) created this month</p>
+      <h2 style="color:#1a1a1a">Mi Casa — Your Invoice for ${nextMonthLabel} is Ready</h2>
+      <p style="color:#555">Your invoice for <strong>${nextMonthLabel}</strong> has been prepared. Please review the details below.</p>
+      <p style="color:#444">Payment is due on the <strong>1st of ${nextMonthLabel}</strong>. We accept payments through the <strong>5th</strong>.</p>
       <table style="width:100%;border-collapse:collapse;margin-top:16px">
         <thead>
           <tr style="background:#f5f5f5">
@@ -398,8 +402,8 @@ async function runMonthlyInvoices() {
       <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
     </div>`;
 
-  await sendEmail('elijahkrumme@gmail.com', `Mi Casa — Monthly Invoice Summary for ${monthLabel}`, html);
-  console.log(`Monthly invoice summary sent for ${monthLabel}`);
+  await sendEmail('elijahkrumme@gmail.com', `Mi Casa — Your Invoice for ${nextMonthLabel} is Ready`, html);
+  console.log(`Monthly invoice notice sent for ${nextMonthLabel}`);
   return { status: 'ok', count: invoices.length, total: totalAmt };
 }
 
@@ -422,24 +426,29 @@ app.get('/run-monthly-invoices', async (req, res) => {
     if (result.status === 'no-token' || result.status === 'token-error') {
       return res.status(503).send('QB token expired — visit <a href="/connect">/connect</a> to re-authorize.');
     }
-    if (result.count === 0) return res.send('Check complete — no invoices found for this month.');
-    res.send(`Check complete — ${result.count} invoice(s), $${result.total.toFixed(2)} total. Email sent.`);
+    if (result.count === 0) return res.send('Check complete — no invoices found for this month. No email sent.');
+    res.send(`Check complete — next month invoice notice sent with ${result.count} invoice(s), $${result.total.toFixed(2)} total.`);
   } catch (e) {
     console.error('Run-monthly-invoices error:', e);
     res.status(500).send('Failed: ' + e.message);
   }
 });
 
-// Daily 8 AM check
+// Daily 8 AM check — only sends overdue emails between the 6th and 15th
 cron.schedule('0 8 * * *', () => {
+  const day = new Date().getDate();
+  if (day < 6 || day > 15) {
+    console.log('Outside overdue reminder window');
+    return;
+  }
   console.log('Running daily overdue invoice check...');
   runOverdueCheck().catch(e => console.error('Cron job error:', e));
   run30DayAlert().catch(e => console.error('30-day cron error:', e));
 });
 
-// 1st of every month at 8 AM
-cron.schedule('0 8 1 * *', () => {
-  console.log('Running monthly invoice summary...');
+// 20th of every month at 8 AM — sends next month's invoice notice
+cron.schedule('0 8 20 * *', () => {
+  console.log('Running monthly invoice notice...');
   runMonthlyInvoices().catch(e => console.error('Monthly cron error:', e));
 });
 
@@ -492,5 +501,5 @@ app.listen(3000, () => {
   console.log('30-day alert: http://localhost:3000/run-30-day-alert');
   console.log('Monthly summary: http://localhost:3000/run-monthly-invoices');
   console.log('KanCare reminder: http://localhost:3000/run-kancare-reminder');
-  console.log('Daily cron: 8:00 AM | Monthly: 1st | KanCare: 25th');
+  console.log('Daily cron: 8:00 AM (6th-15th only) | Invoice notice: 20th | KanCare: 25th');
 });

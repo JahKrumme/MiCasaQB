@@ -27,6 +27,7 @@ let qbRealmId = process.env.INTUIT_REALM_ID || null;
 if (process.env.INTUIT_REFRESH_TOKEN && qbRealmId) {
   oauthClient.setToken({ refresh_token: process.env.INTUIT_REFRESH_TOKEN });
   console.log('QB tokens initialized from environment variables');
+  console.log('INTUIT_REFRESH_TOKEN:', process.env.INTUIT_REFRESH_TOKEN);
 }
 
 // --- helpers ---
@@ -73,9 +74,10 @@ async function saveTokensToRender(refreshToken, realmId) {
     body: JSON.stringify({ envVars: merged })
   });
   if (putRes.ok) {
-    console.log('Tokens saved to Render environment variables');
+    console.log('Render env vars updated successfully');
   } else {
-    console.error('Failed to save tokens to Render:', await putRes.text());
+    const errText = await putRes.text();
+    console.error('Failed to save tokens to Render. Status:', putRes.status, 'Response:', errText);
   }
 }
 

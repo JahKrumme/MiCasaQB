@@ -1,4 +1,4 @@
-require('dotenv').config();
+try { require('dotenv').config(); } catch (_) {}
 const express = require('express');
 const OAuthClient = require('intuit-oauth');
 const { google } = require('googleapis');
@@ -569,15 +569,10 @@ cron.schedule('0 8 25 * *', () => {
   runKanCareReminder().catch(e => console.error('KanCare cron error:', e));
 });
 
-app.listen(3000, () => {
-  console.log('Server running at http://localhost:3000');
-  console.log('QuickBooks: http://localhost:3000/connect');
-  console.log('Gmail: http://localhost:3000/gmail/connect');
-  console.log('Test email: http://localhost:3000/send-test');
-  console.log('Overdue invoices: http://localhost:3000/overdue-invoices');
-  console.log('Manual check: http://localhost:3000/run-check');
-  console.log('30-day alert: http://localhost:3000/run-30-day-alert');
-  console.log('Monthly summary: http://localhost:3000/run-monthly-invoices');
-  console.log('KanCare reminder: http://localhost:3000/run-kancare-reminder');
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  const base = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+  console.log(`Server running at ${base}`);
+  console.log(`QuickBooks connect: ${base}/connect`);
   console.log('Daily cron: 8:00 AM (6th-15th only) | Invoice notice: 20th | KanCare: 25th');
 });

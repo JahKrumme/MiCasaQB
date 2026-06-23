@@ -1,4 +1,6 @@
-try { require('dotenv').config(); } catch (_) {}
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 const express = require('express');
 const OAuthClient = require('intuit-oauth');
 const { google } = require('googleapis');

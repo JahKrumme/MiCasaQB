@@ -485,6 +485,23 @@ app.get('/run-kancare-reminder', async (req, res) => {
   }
 });
 
+app.get('/disconnect', (req, res) => {
+  qbRealmId = null;
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Disconnected — Mi Casa Care Homes LLC</title>
+<style>body{font-family:sans-serif;max-width:680px;margin:60px auto;padding:0 24px;color:#222;line-height:1.7}h1{font-size:24px;margin-bottom:8px}hr{border:none;border-top:1px solid #ddd;margin:24px 0}p{color:#444}</style>
+</head>
+<body>
+  <h1>Disconnected from QuickBooks</h1>
+  <hr>
+  <p>You have been disconnected from QuickBooks. Contact your administrator to reconnect.</p>
+  <hr>
+  <p style="font-size:13px;color:#999">&copy; ${new Date().getFullYear()} Mi Casa Care Homes LLC. All rights reserved.</p>
+</body>
+</html>`);
+});
+
 app.get('/terms', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en">

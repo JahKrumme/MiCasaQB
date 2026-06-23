@@ -72,7 +72,7 @@ async function saveTokensToRender(refreshToken, realmId) {
   const putRes = await fetch(`https://api.render.com/v1/services/${serviceId}/env-vars`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ envVars: merged })
+    body: JSON.stringify(merged)
   });
   if (putRes.ok) {
     console.log('Render env vars updated successfully');

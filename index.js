@@ -336,11 +336,111 @@ app.get('/run-30-day-alert', async (req, res) => {
   }
 });
 
+async function runMonthlyInvoices() {
+  if (!qbRealmId) {
+    console.log('QB token expired — re-authorization needed');
+    return { status: 'no-token' };
+  }
+
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+  const monthLabel = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+  let data;
+  try {
+    data = await qbQuery(`SELECT * FROM Invoice WHERE TxnDate >= '${firstDay}' AND TxnDate <= '${lastDay}'`);
+  } catch (e) {
+    console.log('QB token expired — re-authorization needed');
+    return { status: 'token-error', message: e.message };
+  }
+
+  const invoices = data.QueryResponse?.Invoice || [];
+  if (invoices.length === 0) {
+    console.log(`Monthly invoice summary: no invoices found for ${monthLabel}`);
+    return { status: 'ok', count: 0 };
+  }
+
+  const rows = invoices.map(inv => `
+    <tr>
+      <td style="padding:12px 16px;border-bottom:1px solid #eee">#${inv.DocNumber}</td>
+      <td style="padding:12px 16px;border-bottom:1px solid #eee">${inv.CustomerRef?.name || 'N/A'}</td>
+      <td style="padding:12px 16px;border-bottom:1px solid #eee">${inv.TxnDate}</td>
+      <td style="padding:12px 16px;border-bottom:1px solid #eee">${inv.DueDate || '—'}</td>
+      <td style="padding:12px 16px;border-bottom:1px solid #eee;font-weight:600">$${Number(inv.TotalAmt).toFixed(2)}</td>
+    </tr>`).join('');
+
+  const totalAmt = invoices.reduce((sum, inv) => sum + Number(inv.TotalAmt), 0);
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:700px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">Mi Casa — Monthly Invoice Summary</h2>
+      <p style="color:#555"><strong>${monthLabel}</strong> — ${invoices.length} invoice(s) created this month</p>
+      <table style="width:100%;border-collapse:collapse;margin-top:16px">
+        <thead>
+          <tr style="background:#f5f5f5">
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Invoice</th>
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Customer</th>
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Created</th>
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Due Date</th>
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Amount</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr style="background:#fafafa">
+            <td colspan="4" style="padding:12px 16px;font-weight:700;text-align:right">Total Invoiced:</td>
+            <td style="padding:12px 16px;font-weight:700;color:#1a1a1a">$${totalAmt.toFixed(2)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+      <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
+    </div>`;
+
+  await sendEmail('elijahkrumme@gmail.com', `Mi Casa — Monthly Invoice Summary for ${monthLabel}`, html);
+  console.log(`Monthly invoice summary sent for ${monthLabel}`);
+  return { status: 'ok', count: invoices.length, total: totalAmt };
+}
+
+app.get('/monthly-invoices', async (req, res) => {
+  if (!qbRealmId) return res.redirect('/connect');
+  try {
+    const result = await runMonthlyInvoices();
+    if (result.status === 'no-token' || result.status === 'token-error') return res.redirect('/connect');
+    if (result.count === 0) return res.send('No invoices found for this month.');
+    res.send(`Found ${result.count} invoice(s) this month. Email sent to elijahkrumme@gmail.com.`);
+  } catch (e) {
+    console.error('Monthly-invoices error:', e);
+    res.status(500).send('Failed: ' + e.message);
+  }
+});
+
+app.get('/run-monthly-invoices', async (req, res) => {
+  try {
+    const result = await runMonthlyInvoices();
+    if (result.status === 'no-token' || result.status === 'token-error') {
+      return res.status(503).send('QB token expired — visit <a href="/connect">/connect</a> to re-authorize.');
+    }
+    if (result.count === 0) return res.send('Check complete — no invoices found for this month.');
+    res.send(`Check complete — ${result.count} invoice(s), $${result.total.toFixed(2)} total. Email sent.`);
+  } catch (e) {
+    console.error('Run-monthly-invoices error:', e);
+    res.status(500).send('Failed: ' + e.message);
+  }
+});
+
 // Daily 8 AM check
 cron.schedule('0 8 * * *', () => {
   console.log('Running daily overdue invoice check...');
   runOverdueCheck().catch(e => console.error('Cron job error:', e));
   run30DayAlert().catch(e => console.error('30-day cron error:', e));
+});
+
+// 1st of every month at 8 AM
+cron.schedule('0 8 1 * *', () => {
+  console.log('Running monthly invoice summary...');
+  runMonthlyInvoices().catch(e => console.error('Monthly cron error:', e));
 });
 
 app.listen(3000, () => {
@@ -351,5 +451,6 @@ app.listen(3000, () => {
   console.log('Overdue invoices: http://localhost:3000/overdue-invoices');
   console.log('Manual check: http://localhost:3000/run-check');
   console.log('30-day alert: http://localhost:3000/run-30-day-alert');
-  console.log('Daily cron: 8:00 AM every day');
+  console.log('Monthly summary: http://localhost:3000/run-monthly-invoices');
+  console.log('Daily cron: 8:00 AM | Monthly cron: 1st of month at 8:00 AM');
 });

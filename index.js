@@ -485,6 +485,42 @@ app.get('/run-kancare-reminder', async (req, res) => {
   }
 });
 
+app.get('/terms', (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Terms of Use — Mi Casa Care Homes LLC</title>
+<style>body{font-family:sans-serif;max-width:680px;margin:60px auto;padding:0 24px;color:#222;line-height:1.7}h1{font-size:24px;margin-bottom:8px}hr{border:none;border-top:1px solid #ddd;margin:24px 0}p{color:#444}</style>
+</head>
+<body>
+  <h1>Terms of Use</h1>
+  <hr>
+  <p>This application is an internal tool operated by <strong>Mi Casa Care Homes LLC</strong> and is intended solely for use by authorized staff members.</p>
+  <p>This tool is not intended for public use. Unauthorized access or use of this application is strictly prohibited.</p>
+  <p>By accessing this application, you confirm that you are an authorized employee or representative of Mi Casa Care Homes LLC.</p>
+  <hr>
+  <p style="font-size:13px;color:#999">&copy; ${new Date().getFullYear()} Mi Casa Care Homes LLC. All rights reserved.</p>
+</body>
+</html>`);
+});
+
+app.get('/privacy', (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Privacy Policy — Mi Casa Care Homes LLC</title>
+<style>body{font-family:sans-serif;max-width:680px;margin:60px auto;padding:0 24px;color:#222;line-height:1.7}h1{font-size:24px;margin-bottom:8px}hr{border:none;border-top:1px solid #ddd;margin:24px 0}p{color:#444}</style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <hr>
+  <p>This application is operated by <strong>Mi Casa Care Homes LLC</strong> for internal billing and administrative purposes only.</p>
+  <p>This app accesses QuickBooks financial data solely to support internal billing operations at Mi Casa Care Homes LLC. No financial data or personal information is shared with third parties.</p>
+  <p>Access to this application is restricted to authorized staff only. All data accessed through this tool remains confidential and is used exclusively for internal operations.</p>
+  <hr>
+  <p style="font-size:13px;color:#999">&copy; ${new Date().getFullYear()} Mi Casa Care Homes LLC. All rights reserved.</p>
+</body>
+</html>`);
+});
+
 // 25th of every month at 8 AM
 cron.schedule('0 8 25 * *', () => {
   console.log('Running KanCare billing reminder...');

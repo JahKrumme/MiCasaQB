@@ -26,11 +26,6 @@ const gmailAuth = new google.auth.OAuth2(
 // QB token stored in memory — initialized from env vars on startup if available
 let qbRealmId = process.env.INTUIT_REALM_ID || null;
 
-if (process.env.INTUIT_REFRESH_TOKEN && qbRealmId) {
-  oauthClient.setToken({ refresh_token: process.env.INTUIT_REFRESH_TOKEN });
-  console.log('QB tokens initialized from environment variables');
-  console.log('INTUIT_REFRESH_TOKEN:', process.env.INTUIT_REFRESH_TOKEN);
-}
 
 // --- helpers ---
 
@@ -84,9 +79,6 @@ async function saveTokensToRender(refreshToken, realmId) {
 }
 
 async function qbQuery(query) {
-  if (!oauthClient.isAccessTokenValid()) {
-    await oauthClient.refresh();
-  }
   const base = process.env.INTUIT_ENVIRONMENT === 'sandbox'
     ? 'https://sandbox-quickbooks.api.intuit.com'
     : 'https://quickbooks.api.intuit.com';

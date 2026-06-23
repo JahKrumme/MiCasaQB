@@ -1,7 +1,9 @@
 require('dotenv').config();
+const fs = require('fs');
 const express = require('express');
 const OAuthClient = require('intuit-oauth');
 const { google } = require('googleapis');
+const cron = require('node-cron');
 
 const app = express();
 
@@ -20,6 +22,21 @@ const gmailAuth = new google.auth.OAuth2(
   'http://localhost:3000/gmail/callback'
 );
 
+// QB token stored in memory after /connect flow
+let qbRealmId = null;
+
+function updateEnv(key, value) {
+  const envPath = `${__dirname}/.env`;
+  let content = fs.readFileSync(envPath, 'utf8');
+  const regex = new RegExp(`^${key}=.*$`, 'm');
+  if (regex.test(content)) {
+    content = content.replace(regex, `${key}=${value}`);
+  } else {
+    content += `\n${key}=${value}`;
+  }
+  fs.writeFileSync(envPath, content);
+}
+
 // --- helpers ---
 
 async function getGmailClient() {
@@ -27,31 +44,25 @@ async function getGmailClient() {
   return google.gmail({ version: 'v1', auth: gmailAuth });
 }
 
-async function sendEmail(to, subject, body) {
+async function sendEmail(to, subject, html) {
   const gmail = await getGmailClient();
   const message = [
     `To: ${to}`,
     `Subject: ${subject}`,
-    'Content-Type: text/plain; charset=utf-8',
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=utf-8',
     '',
-    body
+    html
   ].join('\n');
   const encoded = Buffer.from(message).toString('base64url');
   await gmail.users.messages.send({ userId: 'me', requestBody: { raw: encoded } });
 }
 
-async function refreshQBToken() {
-  oauthClient.setToken({ refresh_token: process.env.INTUIT_REFRESH_TOKEN });
-  await oauthClient.refresh();
-}
-
 async function qbQuery(query) {
-  await refreshQBToken();
-  const realmId = process.env.INTUIT_REALM_ID;
   const base = process.env.INTUIT_ENVIRONMENT === 'sandbox'
     ? 'https://sandbox-quickbooks.api.intuit.com'
     : 'https://quickbooks.api.intuit.com';
-  const url = `${base}/v3/company/${realmId}/query?query=${encodeURIComponent(query)}&minorversion=65`;
+  const url = `${base}/v3/company/${qbRealmId}/query?query=${encodeURIComponent(query)}&minorversion=65`;
   const response = await oauthClient.makeApiCall({ url });
   return JSON.parse(response.body);
 }
@@ -69,23 +80,14 @@ app.get('/connect', (req, res) => {
 app.get('/callback', async (req, res) => {
   try {
     await oauthClient.createToken(req.url);
-    const realmId = req.query.realmId;
-    const url = `https://sandbox-quickbooks.api.intuit.com/v3/company/${realmId}/query?query=SELECT * FROM Invoice MAXRESULTS 5&minorversion=65`;
-    const response = await oauthClient.makeApiCall({ url });
-    const data = JSON.parse(response.body);
-    const invoices = data.QueryResponse.Invoice || [];
-
-    if (invoices.length === 0) {
-      res.send('Connected! No invoices found in sandbox yet.');
-    } else {
-      let output = `Connected! Found ${invoices.length} invoice(s):<br><br>`;
-      invoices.forEach(inv => {
-        output += `Invoice #${inv.DocNumber} | $${inv.TotalAmt} | Due: ${inv.DueDate} | Balance: $${inv.Balance}<br>`;
-      });
-      res.send(output);
-    }
+    qbRealmId = req.query.realmId;
+    const token = oauthClient.getToken();
+    updateEnv('INTUIT_REFRESH_TOKEN', token.refresh_token);
+    updateEnv('INTUIT_REALM_ID', qbRealmId);
+    console.log('Tokens saved to .env');
+    res.send('QuickBooks connected! Token stored in memory. <a href="/overdue-invoices">View overdue invoices</a>');
   } catch (e) {
-    console.error('Error:', e);
+    console.error('QB callback error:', e);
     res.send('Something went wrong: ' + e.message);
   }
 });
@@ -115,7 +117,14 @@ app.get('/gmail/callback', async (req, res) => {
 // Send a test email
 app.get('/send-test', async (req, res) => {
   try {
-    await sendEmail('elijahkrumme@gmail.com', 'Test Email from QuikBooks App', 'It works! Gmail API is connected.');
+    const html = `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+        <h2 style="color:#1a1a1a">QuikBooks App — Test Email</h2>
+        <p style="color:#444">It works! Your Gmail API connection is live and ready.</p>
+        <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+        <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
+      </div>`;
+    await sendEmail('elijahkrumme@gmail.com', 'Test Email from QuikBooks App', html);
     res.send('Test email sent to elijahkrumme@gmail.com');
   } catch (e) {
     console.error('Send-test error:', e);
@@ -123,29 +132,115 @@ app.get('/send-test', async (req, res) => {
   }
 });
 
+async function runOverdueCheck() {
+  if (!qbRealmId) {
+    console.log('QB token expired — re-authorization needed');
+    return { status: 'no-token' };
+  }
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  let data;
+  try {
+    data = await qbQuery(`SELECT * FROM Invoice WHERE Balance > '0' AND DueDate < '${todayStr}'`);
+  } catch (e) {
+    console.log('QB token expired — re-authorization needed');
+    return { status: 'token-error', message: e.message };
+  }
+
+  const invoices = data.QueryResponse?.Invoice || [];
+  if (invoices.length === 0) {
+    console.log('Daily overdue check complete — no overdue invoices found.');
+    return { status: 'ok', count: 0 };
+  }
+
+  const rows = invoices.map(inv => {
+    const due = new Date(inv.DueDate);
+    const daysOverdue = Math.floor((today - due) / (1000 * 60 * 60 * 24));
+    const urgency = daysOverdue > 60 ? '#c0392b' : daysOverdue > 30 ? '#e67e22' : '#2c3e50';
+    return `
+      <tr>
+        <td style="padding:12px 16px;border-bottom:1px solid #eee">#${inv.DocNumber}</td>
+        <td style="padding:12px 16px;border-bottom:1px solid #eee">${inv.CustomerRef?.name || 'N/A'}</td>
+        <td style="padding:12px 16px;border-bottom:1px solid #eee">${inv.DueDate}</td>
+        <td style="padding:12px 16px;border-bottom:1px solid #eee;color:${urgency};font-weight:600">${daysOverdue} days</td>
+        <td style="padding:12px 16px;border-bottom:1px solid #eee;font-weight:600">$${Number(inv.Balance).toFixed(2)}</td>
+      </tr>`;
+  }).join('');
+
+  const totalBalance = invoices.reduce((sum, inv) => sum + Number(inv.Balance), 0);
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:700px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">Overdue Invoices</h2>
+      <p style="color:#555">As of <strong>${todayStr}</strong> — ${invoices.length} invoice(s) overdue</p>
+      <table style="width:100%;border-collapse:collapse;margin-top:16px">
+        <thead>
+          <tr style="background:#f5f5f5">
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Invoice</th>
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Customer</th>
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Due Date</th>
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Days Overdue</th>
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Balance</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr style="background:#fafafa">
+            <td colspan="4" style="padding:12px 16px;font-weight:700;text-align:right">Total Outstanding:</td>
+            <td style="padding:12px 16px;font-weight:700;color:#c0392b">$${totalBalance.toFixed(2)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+      <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
+    </div>`;
+
+  await sendEmail('elijahkrumme@gmail.com', `Overdue Invoices — ${invoices.length} unpaid ($${totalBalance.toFixed(2)})`, html);
+  console.log('Daily overdue check complete');
+  return { status: 'ok', count: invoices.length, total: totalBalance };
+}
+
 // Fetch overdue invoices from QB and email them
 app.get('/overdue-invoices', async (req, res) => {
+  if (!qbRealmId) {
+    return res.redirect('/connect');
+  }
   try {
-    const today = new Date().toISOString().split('T')[0];
-    const data = await qbQuery(`SELECT * FROM Invoice WHERE Balance > '0' AND DueDate < '${today}'`);
-    const invoices = data.QueryResponse?.Invoice || [];
-
-    if (invoices.length === 0) {
-      res.send('No overdue invoices found.');
-      return;
+    const result = await runOverdueCheck();
+    if (result.status === 'no-token' || result.status === 'token-error') {
+      return res.redirect('/connect');
     }
-
-    const lines = invoices.map(inv =>
-      `Invoice #${inv.DocNumber} | Customer: ${inv.CustomerRef?.name || 'N/A'} | Due: ${inv.DueDate} | Balance: $${inv.Balance}`
-    );
-    const body = `Overdue Invoices as of ${today}:\n\n${lines.join('\n')}`;
-
-    await sendEmail('elijahkrumme@gmail.com', `Overdue Invoices (${invoices.length})`, body);
-    res.send(`Found ${invoices.length} overdue invoice(s). Email sent to elijahkrumme@gmail.com.<br><br>${lines.join('<br>')}`);
+    if (result.count === 0) {
+      return res.send('No overdue invoices found.');
+    }
+    res.send(`Found ${result.count} overdue invoice(s). Email sent to elijahkrumme@gmail.com.`);
   } catch (e) {
     console.error('Overdue-invoices error:', e);
     res.status(500).send('Failed: ' + e.message);
   }
+});
+
+// Manually trigger the daily check
+app.get('/run-check', async (req, res) => {
+  try {
+    const result = await runOverdueCheck();
+    if (result.status === 'no-token' || result.status === 'token-error') {
+      return res.status(503).send('QB token expired — visit <a href="/connect">/connect</a> to re-authorize.');
+    }
+    if (result.count === 0) {
+      return res.send('Check complete — no overdue invoices found.');
+    }
+    res.send(`Check complete — ${result.count} overdue invoice(s), $${result.total.toFixed(2)} total. Email sent.`);
+  } catch (e) {
+    console.error('Run-check error:', e);
+    res.status(500).send('Failed: ' + e.message);
+  }
+});
+
+// Daily 8 AM check
+cron.schedule('0 8 * * *', () => {
+  console.log('Running daily overdue invoice check...');
+  runOverdueCheck().catch(e => console.error('Cron job error:', e));
 });
 
 app.listen(3000, () => {
@@ -154,4 +249,6 @@ app.listen(3000, () => {
   console.log('Gmail: http://localhost:3000/gmail/connect');
   console.log('Test email: http://localhost:3000/send-test');
   console.log('Overdue invoices: http://localhost:3000/overdue-invoices');
+  console.log('Manual check: http://localhost:3000/run-check');
+  console.log('Daily cron: 8:00 AM every day');
 });

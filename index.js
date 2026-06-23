@@ -31,7 +31,7 @@ if (process.env.INTUIT_REFRESH_TOKEN && qbRealmId) {
   console.log('QB client initialized from env vars on startup');
 }
 
-const RECIPIENTS = 'elijahkrumme@gmail.com, micasacarehomes@gmail.com, micasatyler@gmail.com';
+const RECIPIENTS = 'elijahkrumme@gmail.com, micasacarehomes@gmail.com, micasatyler@gmail.com, bom@wvmsks.com, office@wvmsks.com';
 
 // --- helpers ---
 

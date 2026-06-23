@@ -40,9 +40,11 @@ async function getGmailClient() {
   return google.gmail({ version: 'v1', auth: gmailAuth });
 }
 
+// GMAIL_REFRESH_TOKEN must be obtained by authorizing with micasacarehomes@gmail.com at /gmail/connect
 async function sendEmail(to, subject, html) {
   const gmail = await getGmailClient();
   const message = [
+    'From: Mi Casa Care Homes <micasacarehomes@gmail.com>',
     `To: ${to}`,
     `Subject: ${subject}`,
     'MIME-Version: 1.0',

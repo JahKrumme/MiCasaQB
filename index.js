@@ -1,5 +1,4 @@
 require('dotenv').config();
-const fs = require('fs');
 const express = require('express');
 const OAuthClient = require('intuit-oauth');
 const { google } = require('googleapis');
@@ -25,17 +24,6 @@ const gmailAuth = new google.auth.OAuth2(
 // QB token stored in memory after /connect flow
 let qbRealmId = null;
 
-function updateEnv(key, value) {
-  const envPath = `${__dirname}/.env`;
-  let content = fs.readFileSync(envPath, 'utf8');
-  const regex = new RegExp(`^${key}=.*$`, 'm');
-  if (regex.test(content)) {
-    content = content.replace(regex, `${key}=${value}`);
-  } else {
-    content += `\n${key}=${value}`;
-  }
-  fs.writeFileSync(envPath, content);
-}
 
 // --- helpers ---
 
@@ -81,10 +69,7 @@ app.get('/callback', async (req, res) => {
   try {
     await oauthClient.createToken(req.url);
     qbRealmId = req.query.realmId;
-    const token = oauthClient.getToken();
-    updateEnv('INTUIT_REFRESH_TOKEN', token.refresh_token);
-    updateEnv('INTUIT_REALM_ID', qbRealmId);
-    console.log('Tokens saved to .env');
+    console.log('QB tokens stored in memory');
     res.send('QuickBooks connected! Token stored in memory. <a href="/overdue-invoices">View overdue invoices</a>');
   } catch (e) {
     console.error('QB callback error:', e);

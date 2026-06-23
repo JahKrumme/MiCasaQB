@@ -31,6 +31,8 @@ if (process.env.INTUIT_REFRESH_TOKEN && qbRealmId) {
   console.log('QB client initialized from env vars on startup');
 }
 
+const RECIPIENTS = 'elijahkrumme@gmail.com, micasacarehomes@gmail.com, micasatyler@gmail.com';
+
 // --- helpers ---
 
 async function getGmailClient() {
@@ -151,7 +153,7 @@ app.get('/send-test', async (req, res) => {
         <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
         <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
       </div>`;
-    await sendEmail('elijahkrumme@gmail.com', 'Test Email from QuikBooks App', html);
+    await sendEmail(RECIPIENTS, 'Test Email from QuikBooks App', html);
     res.send('Test email sent to elijahkrumme@gmail.com');
   } catch (e) {
     console.error('Send-test error:', e);
@@ -223,7 +225,7 @@ async function runOverdueCheck() {
       <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
     </div>`;
 
-  await sendEmail('elijahkrumme@gmail.com', `Overdue Invoices — ${invoices.length} unpaid ($${totalBalance.toFixed(2)})`, html);
+  await sendEmail(RECIPIENTS, `Overdue Invoices — ${invoices.length} unpaid ($${totalBalance.toFixed(2)})`, html);
   console.log('Daily overdue check complete');
   return { status: 'ok', count: invoices.length, total: totalBalance };
 }
@@ -333,7 +335,7 @@ async function run30DayAlert() {
       <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
     </div>`;
 
-  await sendEmail('elijahkrumme@gmail.com', 'Action Required: Invoices 30+ Days Overdue', html);
+  await sendEmail(RECIPIENTS, 'Action Required: Invoices 30+ Days Overdue', html);
   return { status: 'ok', count: invoices.length, total: totalBalance };
 }
 
@@ -431,7 +433,7 @@ async function runMonthlyInvoices() {
       <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
     </div>`;
 
-  await sendEmail('elijahkrumme@gmail.com', `Mi Casa — Your Invoice for ${nextMonthLabel} is Ready`, html);
+  await sendEmail(RECIPIENTS, `Mi Casa — Your Invoice for ${nextMonthLabel} is Ready`, html);
   console.log(`Monthly invoice notice sent for ${nextMonthLabel}`);
   return { status: 'ok', count: invoices.length, total: totalAmt };
 }
@@ -500,7 +502,7 @@ async function runKanCareReminder() {
       <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
     </div>`;
 
-  await sendEmail('elijahkrumme@gmail.com', 'KanCare Billing Deadline Reminder', html);
+  await sendEmail(RECIPIENTS, 'KanCare Billing Deadline Reminder', html);
   console.log(`KanCare reminder sent for ${monthLabel}`);
 }
 

@@ -26,6 +26,10 @@ const gmailAuth = new google.auth.OAuth2(
 // QB token stored in memory — initialized from env vars on startup if available
 let qbRealmId = process.env.INTUIT_REALM_ID || null;
 
+if (process.env.INTUIT_REFRESH_TOKEN && qbRealmId) {
+  oauthClient.setToken({ refresh_token: process.env.INTUIT_REFRESH_TOKEN });
+  console.log('QB client initialized from env vars on startup');
+}
 
 // --- helpers ---
 
@@ -79,6 +83,7 @@ async function saveTokensToRender(refreshToken, realmId) {
 }
 
 async function qbQuery(query) {
+  await oauthClient.refresh();
   const base = process.env.INTUIT_ENVIRONMENT === 'sandbox'
     ? 'https://sandbox-quickbooks.api.intuit.com'
     : 'https://quickbooks.api.intuit.com';
@@ -104,6 +109,8 @@ app.get('/callback', async (req, res) => {
     const token = oauthClient.getToken();
     console.log('Callback fired, realmId: ' + req.query.realmId);
     console.log('Token set on oauthClient: ' + JSON.stringify(token));
+    process.env.INTUIT_REFRESH_TOKEN = token.refresh_token;
+    process.env.INTUIT_REALM_ID = qbRealmId;
     saveTokensToRender(token.refresh_token, qbRealmId).catch(e => console.error('Render save error:', e));
     res.send('QuickBooks connected! Token stored in memory. <a href="/overdue-invoices">View overdue invoices</a>');
   } catch (e) {

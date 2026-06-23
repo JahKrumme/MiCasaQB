@@ -237,10 +237,110 @@ app.get('/run-check', async (req, res) => {
   }
 });
 
+async function run30DayAlert() {
+  if (!qbRealmId) {
+    console.log('QB token expired — re-authorization needed');
+    return { status: 'no-token' };
+  }
+  const today = new Date();
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() - 30);
+  const cutoffStr = cutoff.toISOString().split('T')[0];
+  const todayStr = today.toISOString().split('T')[0];
+
+  let data;
+  try {
+    data = await qbQuery(`SELECT * FROM Invoice WHERE Balance > '0' AND DueDate < '${cutoffStr}'`);
+  } catch (e) {
+    console.log('QB token expired — re-authorization needed');
+    return { status: 'token-error', message: e.message };
+  }
+
+  const invoices = data.QueryResponse?.Invoice || [];
+  if (invoices.length === 0) {
+    console.log('No 30-day overdue invoices today');
+    return { status: 'ok', count: 0 };
+  }
+
+  const rows = invoices.map(inv => {
+    const due = new Date(inv.DueDate);
+    const daysOverdue = Math.floor((today - due) / (1000 * 60 * 60 * 24));
+    return `
+      <tr>
+        <td style="padding:12px 16px;border-bottom:1px solid #eee">#${inv.DocNumber}</td>
+        <td style="padding:12px 16px;border-bottom:1px solid #eee">${inv.CustomerRef?.name || 'N/A'}</td>
+        <td style="padding:12px 16px;border-bottom:1px solid #eee">${inv.DueDate}</td>
+        <td style="padding:12px 16px;border-bottom:1px solid #eee;color:#c0392b;font-weight:600">${daysOverdue} days</td>
+        <td style="padding:12px 16px;border-bottom:1px solid #eee;font-weight:600">$${Number(inv.Balance).toFixed(2)}</td>
+      </tr>`;
+  }).join('');
+
+  const totalBalance = invoices.reduce((sum, inv) => sum + Number(inv.Balance), 0);
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:700px;margin:0 auto;padding:24px">
+      <h2 style="color:#c0392b">Action Required: Invoices 30+ Days Overdue</h2>
+      <p style="color:#555">As of <strong>${todayStr}</strong> — ${invoices.length} invoice(s) are more than 30 days past due.</p>
+      <table style="width:100%;border-collapse:collapse;margin-top:16px">
+        <thead>
+          <tr style="background:#f5f5f5">
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Invoice</th>
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Customer</th>
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Due Date</th>
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Days Overdue</th>
+            <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Balance</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr style="background:#fafafa">
+            <td colspan="4" style="padding:12px 16px;font-weight:700;text-align:right">Total Outstanding:</td>
+            <td style="padding:12px 16px;font-weight:700;color:#c0392b">$${totalBalance.toFixed(2)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+      <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
+    </div>`;
+
+  await sendEmail('elijahkrumme@gmail.com', 'Action Required: Invoices 30+ Days Overdue', html);
+  return { status: 'ok', count: invoices.length, total: totalBalance };
+}
+
+app.get('/30-day-alert', async (req, res) => {
+  if (!qbRealmId) return res.redirect('/connect');
+  try {
+    const result = await run30DayAlert();
+    if (result.status === 'no-token' || result.status === 'token-error') {
+      return res.redirect('/connect');
+    }
+    if (result.count === 0) return res.send('No invoices 30+ days overdue.');
+    res.send(`Found ${result.count} invoice(s) 30+ days overdue. Email sent to elijahkrumme@gmail.com.`);
+  } catch (e) {
+    console.error('30-day-alert error:', e);
+    res.status(500).send('Failed: ' + e.message);
+  }
+});
+
+app.get('/run-30-day-alert', async (req, res) => {
+  try {
+    const result = await run30DayAlert();
+    if (result.status === 'no-token' || result.status === 'token-error') {
+      return res.status(503).send('QB token expired — visit <a href="/connect">/connect</a> to re-authorize.');
+    }
+    if (result.count === 0) return res.send('Check complete — no invoices 30+ days overdue.');
+    res.send(`Check complete — ${result.count} invoice(s) 30+ days overdue, $${result.total.toFixed(2)} total. Email sent.`);
+  } catch (e) {
+    console.error('Run-30-day-alert error:', e);
+    res.status(500).send('Failed: ' + e.message);
+  }
+});
+
 // Daily 8 AM check
 cron.schedule('0 8 * * *', () => {
   console.log('Running daily overdue invoice check...');
   runOverdueCheck().catch(e => console.error('Cron job error:', e));
+  run30DayAlert().catch(e => console.error('30-day cron error:', e));
 });
 
 app.listen(3000, () => {
@@ -250,5 +350,6 @@ app.listen(3000, () => {
   console.log('Test email: http://localhost:3000/send-test');
   console.log('Overdue invoices: http://localhost:3000/overdue-invoices');
   console.log('Manual check: http://localhost:3000/run-check');
+  console.log('30-day alert: http://localhost:3000/run-30-day-alert');
   console.log('Daily cron: 8:00 AM every day');
 });

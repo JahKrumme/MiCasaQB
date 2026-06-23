@@ -443,6 +443,45 @@ cron.schedule('0 8 1 * *', () => {
   runMonthlyInvoices().catch(e => console.error('Monthly cron error:', e));
 });
 
+async function runKanCareReminder() {
+  const now = new Date();
+  const monthLabel = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">KanCare Billing Deadline Reminder</h2>
+      <p style="color:#444">This is a reminder that <strong>KanCare claims for ${monthLabel} are due soon.</strong></p>
+      <p style="color:#444">Please ensure all claims for the current month are submitted before the end of the month to avoid delays in reimbursement.</p>
+      <ul style="color:#444;line-height:1.8">
+        <li>Review all services rendered in ${monthLabel}</li>
+        <li>Verify documentation is complete for each claim</li>
+        <li>Submit all claims before the end of the month</li>
+      </ul>
+      <p style="color:#c0392b;font-weight:600">Deadline: End of ${monthLabel}</p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+      <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
+    </div>`;
+
+  await sendEmail('elijahkrumme@gmail.com', 'KanCare Billing Deadline Reminder', html);
+  console.log(`KanCare reminder sent for ${monthLabel}`);
+}
+
+app.get('/run-kancare-reminder', async (req, res) => {
+  try {
+    await runKanCareReminder();
+    res.send('KanCare billing reminder sent to elijahkrumme@gmail.com.');
+  } catch (e) {
+    console.error('KanCare reminder error:', e);
+    res.status(500).send('Failed: ' + e.message);
+  }
+});
+
+// 25th of every month at 8 AM
+cron.schedule('0 8 25 * *', () => {
+  console.log('Running KanCare billing reminder...');
+  runKanCareReminder().catch(e => console.error('KanCare cron error:', e));
+});
+
 app.listen(3000, () => {
   console.log('Server running at http://localhost:3000');
   console.log('QuickBooks: http://localhost:3000/connect');
@@ -452,5 +491,6 @@ app.listen(3000, () => {
   console.log('Manual check: http://localhost:3000/run-check');
   console.log('30-day alert: http://localhost:3000/run-30-day-alert');
   console.log('Monthly summary: http://localhost:3000/run-monthly-invoices');
-  console.log('Daily cron: 8:00 AM | Monthly cron: 1st of month at 8:00 AM');
+  console.log('KanCare reminder: http://localhost:3000/run-kancare-reminder');
+  console.log('Daily cron: 8:00 AM | Monthly: 1st | KanCare: 25th');
 });

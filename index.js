@@ -102,7 +102,8 @@ app.get('/callback', async (req, res) => {
     await oauthClient.createToken(req.url);
     qbRealmId = req.query.realmId;
     const token = oauthClient.getToken();
-    console.log('QB tokens stored in memory');
+    console.log('Callback fired, realmId: ' + req.query.realmId);
+    console.log('Token set on oauthClient: ' + JSON.stringify(token));
     saveTokensToRender(token.refresh_token, qbRealmId).catch(e => console.error('Render save error:', e));
     res.send('QuickBooks connected! Token stored in memory. <a href="/overdue-invoices">View overdue invoices</a>');
   } catch (e) {
@@ -222,6 +223,8 @@ async function runOverdueCheck() {
 
 // Fetch overdue invoices from QB and email them
 app.get('/overdue-invoices', async (req, res) => {
+  console.log('qbRealmId value: ' + qbRealmId);
+  console.log('Token valid: ' + oauthClient.isAccessTokenValid());
   if (!qbRealmId) {
     return res.redirect('/connect');
   }

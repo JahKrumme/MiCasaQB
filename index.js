@@ -21,9 +21,13 @@ const gmailAuth = new google.auth.OAuth2(
   'http://localhost:3000/gmail/callback'
 );
 
-// QB token stored in memory after /connect flow
-let qbRealmId = null;
+// QB token stored in memory — initialized from env vars on startup if available
+let qbRealmId = process.env.INTUIT_REALM_ID || null;
 
+if (process.env.INTUIT_REFRESH_TOKEN && qbRealmId) {
+  oauthClient.setToken({ refresh_token: process.env.INTUIT_REFRESH_TOKEN });
+  console.log('QB tokens initialized from environment variables');
+}
 
 // --- helpers ---
 
@@ -46,7 +50,39 @@ async function sendEmail(to, subject, html) {
   await gmail.users.messages.send({ userId: 'me', requestBody: { raw: encoded } });
 }
 
+async function saveTokensToRender(refreshToken, realmId) {
+  const apiKey = process.env.RENDER_API_KEY;
+  const serviceId = process.env.RENDER_SERVICE_ID;
+  if (!apiKey || !serviceId) {
+    console.log('RENDER_API_KEY or RENDER_SERVICE_ID not set — skipping Render env update');
+    return;
+  }
+  const getRes = await fetch(`https://api.render.com/v1/services/${serviceId}/env-vars`, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }
+  });
+  const existing = await getRes.json();
+  const merged = existing
+    .filter(e => e.envVar)
+    .map(e => ({ key: e.envVar.key, value: e.envVar.value }))
+    .filter(e => e.key !== 'INTUIT_REFRESH_TOKEN' && e.key !== 'INTUIT_REALM_ID');
+  merged.push({ key: 'INTUIT_REFRESH_TOKEN', value: refreshToken });
+  merged.push({ key: 'INTUIT_REALM_ID', value: realmId });
+  const putRes = await fetch(`https://api.render.com/v1/services/${serviceId}/env-vars`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ envVars: merged })
+  });
+  if (putRes.ok) {
+    console.log('Tokens saved to Render environment variables');
+  } else {
+    console.error('Failed to save tokens to Render:', await putRes.text());
+  }
+}
+
 async function qbQuery(query) {
+  if (!oauthClient.isAccessTokenValid()) {
+    await oauthClient.refresh();
+  }
   const base = process.env.INTUIT_ENVIRONMENT === 'sandbox'
     ? 'https://sandbox-quickbooks.api.intuit.com'
     : 'https://quickbooks.api.intuit.com';
@@ -69,7 +105,9 @@ app.get('/callback', async (req, res) => {
   try {
     await oauthClient.createToken(req.url);
     qbRealmId = req.query.realmId;
+    const token = oauthClient.getToken();
     console.log('QB tokens stored in memory');
+    saveTokensToRender(token.refresh_token, qbRealmId).catch(e => console.error('Render save error:', e));
     res.send('QuickBooks connected! Token stored in memory. <a href="/overdue-invoices">View overdue invoices</a>');
   } catch (e) {
     console.error('QB callback error:', e);

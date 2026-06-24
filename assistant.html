@@ -363,7 +363,7 @@ async function sendMessage() {
       addBubble('error', errMsg);
       history.pop();
     } else {
-      const reply = data?.content?.[0]?.text || '(No response)';
+      const reply = data?.text || '(No response)';
       history.push({ role: 'assistant', content: reply });
       addBubble('assistant', reply);
     }

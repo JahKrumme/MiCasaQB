@@ -29,7 +29,9 @@ let qbRealmId = process.env.INTUIT_REALM_ID || null;
 
 if (process.env.INTUIT_REFRESH_TOKEN && qbRealmId) {
   oauthClient.setToken({ refresh_token: process.env.INTUIT_REFRESH_TOKEN });
-  console.log('QB client initialized from env vars on startup');
+  oauthClient.refresh()
+    .then(() => console.log('QB token refreshed from env vars'))
+    .catch(e => console.error('Startup QB refresh failed:', e.message));
 }
 
 const RECIPIENTS = 'elijahkrumme@gmail.com, micasacarehomes@gmail.com, micasatyler@gmail.com, bom@wvmsks.com, office@wvmsks.com';
@@ -121,6 +123,30 @@ async function qbCreate(endpoint, body) {
   });
   return JSON.parse(response.body);
 }
+
+async function ensureQBToken(req, res, next) {
+  if (!qbRealmId && process.env.INTUIT_REALM_ID) {
+    qbRealmId = process.env.INTUIT_REALM_ID;
+  }
+  if (!oauthClient.getToken()?.refresh_token && process.env.INTUIT_REFRESH_TOKEN) {
+    oauthClient.setToken({ refresh_token: process.env.INTUIT_REFRESH_TOKEN });
+  }
+  if (!qbRealmId) {
+    return res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });
+  }
+  if (!oauthClient.isAccessTokenValid()) {
+    try {
+      await oauthClient.refresh();
+      console.log('QB token refreshed from env vars');
+    } catch (e) {
+      console.error('QB token refresh failed:', e.message);
+      return res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });
+    }
+  }
+  next();
+}
+
+app.use(['/qb', '/run-check', '/run-30-day-alert', '/run-monthly-invoices', '/overdue-invoices', '/30-day-alert', '/monthly-invoices'], ensureQBToken);
 
 // QuickBooks connect route
 app.get('/connect', (req, res) => {

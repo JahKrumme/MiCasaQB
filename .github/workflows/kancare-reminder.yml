@@ -11,5 +11,5 @@ jobs:
     steps:
       - name: Wake up Render and send KanCare reminder
         run: |
-          sleep 60
-          curl -f https://micasaqb.onrender.com/run-kancare-reminder
+          sleep 90
+          curl --fail-with-body https://micasaqb.onrender.com/run-kancare-reminder

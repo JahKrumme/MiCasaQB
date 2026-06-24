@@ -4,7 +4,7 @@ if (process.env.NODE_ENV !== 'production') {
 const express = require('express');
 const OAuthClient = require('intuit-oauth');
 const { google } = require('googleapis');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 
 const app = express();
 app.use(express.json());
@@ -568,23 +568,18 @@ app.get('/assistant', (req, res) => {
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages, system } = req.body;
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
-      systemInstruction: system
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: system },
+        ...messages
+      ],
+      max_tokens: 1024
     });
 
-    // All but the last message become history; last is the current user turn
-    const history = messages.slice(0, -1).map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    }));
-    const lastMessage = messages[messages.length - 1];
-
-    const chat = model.startChat({ history });
-    const result = await chat.sendMessage(lastMessage.content);
-    const text = result.response.text();
-
+    const text = completion.choices[0].message.content;
     res.json({ text });
   } catch (e) {
     console.error('Chat proxy error:', e);

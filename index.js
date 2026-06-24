@@ -21,9 +21,6 @@ app.use(express.json());
 
 // --- Session & Google OAuth ---
 
-const allowedEmails = (process.env.ALLOWED_EMAILS || '')
-  .split(',').map(e => e.trim()).filter(Boolean);
-
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   resave: false,
@@ -45,12 +42,20 @@ passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
   callbackURL: googleCallbackURL
-}, (accessToken, refreshToken, profile, done) => {
+}, async (accessToken, refreshToken, profile, done) => {
   const email = profile.emails?.[0]?.value;
-  if (!email || !allowedEmails.includes(email)) {
-    return done(null, false);
+  if (!email) return done(null, false);
+  try {
+    const { data } = await supabase
+      .from('allowed_emails')
+      .select('email')
+      .eq('email', email)
+      .single();
+    if (!data) return done(null, false);
+    return done(null, { email, name: profile.displayName });
+  } catch (e) {
+    return done(e);
   }
-  return done(null, { email, name: profile.displayName });
 }));
 
 passport.serializeUser((user, done) => done(null, user));

@@ -260,6 +260,11 @@ app.get('/run-check', async (req, res) => {
     if (result.status === 'no-token' || result.status === 'token-error') {
       return res.status(503).send('QB token expired — visit <a href="/connect">/connect</a> to re-authorize.');
     }
+    const token = oauthClient.getToken();
+    if (token.refresh_token && qbRealmId) {
+      process.env.INTUIT_REFRESH_TOKEN = token.refresh_token;
+      saveTokensToRender(token.refresh_token, qbRealmId).catch(e => console.error('Render token save error:', e));
+    }
     if (result.count === 0) {
       return res.send('Check complete — no invoices past due before the 1st of this month.');
     }

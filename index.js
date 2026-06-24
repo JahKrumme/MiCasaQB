@@ -5,6 +5,12 @@ const express = require('express');
 const OAuthClient = require('intuit-oauth');
 const { google } = require('googleapis');
 const Groq = require('groq-sdk');
+const { createClient } = require('@supabase/supabase-js');
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
 
 const app = express();
 app.use(express.json());
@@ -24,15 +30,22 @@ const gmailAuth = new google.auth.OAuth2(
   'http://localhost:3000/gmail/callback'
 );
 
-// QB token stored in memory — initialized from env vars on startup if available
-let qbRealmId = process.env.INTUIT_REALM_ID || null;
+// QB token stored in memory — loaded from Supabase on startup
+let qbRealmId = null;
 
-if (process.env.INTUIT_REFRESH_TOKEN && qbRealmId) {
-  oauthClient.setToken({ refresh_token: process.env.INTUIT_REFRESH_TOKEN });
-  oauthClient.refresh()
-    .then(() => console.log('QB token refreshed from env vars'))
-    .catch(e => console.error('Startup QB refresh failed:', e.message));
-}
+(async () => {
+  try {
+    const tokens = await loadTokensFromSupabase();
+    if (tokens) {
+      qbRealmId = tokens.realm_id;
+      oauthClient.setToken({ refresh_token: tokens.refresh_token });
+      await oauthClient.refresh();
+      console.log('QB token refreshed from env vars');
+    }
+  } catch (e) {
+    console.error('Startup QB token load failed:', e.message);
+  }
+})();
 
 const RECIPIENTS = 'elijahkrumme@gmail.com, micasacarehomes@gmail.com, micasatyler@gmail.com, bom@wvmsks.com, office@wvmsks.com';
 
@@ -69,34 +82,28 @@ async function sendEmail(to, subject, html) {
   await gmail.users.messages.send({ userId: 'me', requestBody: { raw: encoded } });
 }
 
-async function saveTokensToRender(refreshToken, realmId) {
-  const apiKey = process.env.RENDER_API_KEY;
-  const serviceId = process.env.RENDER_SERVICE_ID;
-  if (!apiKey || !serviceId) {
-    console.log('RENDER_API_KEY or RENDER_SERVICE_ID not set — skipping Render env update');
-    return;
-  }
-  const getRes = await fetch(`https://api.render.com/v1/services/${serviceId}/env-vars`, {
-    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }
-  });
-  const existing = await getRes.json();
-  const merged = existing
-    .filter(e => e.envVar)
-    .map(e => ({ key: e.envVar.key, value: e.envVar.value }))
-    .filter(e => e.key !== 'INTUIT_REFRESH_TOKEN' && e.key !== 'INTUIT_REALM_ID');
-  merged.push({ key: 'INTUIT_REFRESH_TOKEN', value: refreshToken });
-  merged.push({ key: 'INTUIT_REALM_ID', value: realmId });
-  const putRes = await fetch(`https://api.render.com/v1/services/${serviceId}/env-vars`, {
-    method: 'PUT',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(merged)
-  });
-  if (putRes.ok) {
-    console.log('Render env vars updated successfully');
+async function saveTokensToSupabase(accessToken, refreshToken, realmId) {
+  const { error } = await supabase
+    .from('qb_tokens')
+    .upsert({ id: 1, access_token: accessToken, refresh_token: refreshToken, realm_id: realmId });
+  if (error) {
+    console.error('Failed to save tokens to Supabase:', error.message);
   } else {
-    const errText = await putRes.text();
-    console.error('Failed to save tokens to Render. Status:', putRes.status, 'Response:', errText);
+    console.log('QB tokens saved to Supabase');
   }
+}
+
+async function loadTokensFromSupabase() {
+  const { data, error } = await supabase
+    .from('qb_tokens')
+    .select('*')
+    .eq('id', 1)
+    .single();
+  if (error) {
+    console.error('Failed to load tokens from Supabase:', error.message);
+    return null;
+  }
+  return data;
 }
 
 async function qbQuery(query) {
@@ -132,19 +139,16 @@ async function qbCreate(endpoint, body) {
 }
 
 async function ensureQBToken(req, res, next) {
-  if (!qbRealmId && process.env.INTUIT_REALM_ID) {
-    qbRealmId = process.env.INTUIT_REALM_ID;
-  }
-  if (!oauthClient.getToken()?.refresh_token && process.env.INTUIT_REFRESH_TOKEN) {
-    oauthClient.setToken({ refresh_token: process.env.INTUIT_REFRESH_TOKEN });
-  }
   if (!qbRealmId) {
     return res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });
   }
   if (!oauthClient.isAccessTokenValid()) {
     try {
       await oauthClient.refresh();
+      const token = oauthClient.getToken();
       console.log('QB token refreshed from env vars');
+      saveTokensToSupabase(token.access_token, token.refresh_token, qbRealmId)
+        .catch(e => console.error('Supabase token save error:', e));
     } catch (e) {
       console.error('QB token refresh failed:', e.message);
       return res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });
@@ -172,9 +176,7 @@ app.get('/callback', async (req, res) => {
     const token = oauthClient.getToken();
     console.log('Callback fired, realmId: ' + req.query.realmId);
     console.log('Token set on oauthClient: ' + JSON.stringify(token));
-    process.env.INTUIT_REFRESH_TOKEN = token.refresh_token;
-    process.env.INTUIT_REALM_ID = qbRealmId;
-    saveTokensToRender(token.refresh_token, qbRealmId).catch(e => console.error('Render save error:', e));
+    saveTokensToSupabase(token.access_token, token.refresh_token, qbRealmId).catch(e => console.error('Supabase save error:', e));
     res.send('QuickBooks connected! Token stored in memory. <a href="/overdue-invoices">View overdue invoices</a>');
   } catch (e) {
     console.error('QB callback error:', e);
@@ -319,11 +321,6 @@ app.get('/run-check', async (req, res) => {
     const result = await runOverdueCheck();
     if (result.status === 'no-token' || result.status === 'token-error') {
       return res.status(503).send('QB token expired — visit <a href="/connect">/connect</a> to re-authorize.');
-    }
-    const token = oauthClient.getToken();
-    if (token.refresh_token && qbRealmId) {
-      process.env.INTUIT_REFRESH_TOKEN = token.refresh_token;
-      saveTokensToRender(token.refresh_token, qbRealmId).catch(e => console.error('Render token save error:', e));
     }
     if (result.count === 0) {
       return res.send('Check complete — no invoices past due before the 1st of this month.');

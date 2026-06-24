@@ -109,6 +109,13 @@ async function qbQuery(query) {
   return JSON.parse(response.body);
 }
 
+async function getActiveCustomers() {
+  if (!qbRealmId) throw new Error('QB not connected');
+  const data = await qbQuery('SELECT * FROM Customer WHERE Active = true MAXRESULTS 100');
+  const customers = data.QueryResponse?.Customer || [];
+  return customers.map(c => c.DisplayName || c.FullyQualifiedName).filter(Boolean);
+}
+
 async function qbCreate(endpoint, body) {
   await oauthClient.refresh();
   const base = process.env.INTUIT_ENVIRONMENT === 'sandbox'
@@ -619,12 +626,30 @@ app.get('/assistant', (req, res) => {
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages, system } = req.body;
+
+    // Inject live QB customer list into system prompt
+    let customerSection;
+    try {
+      const names = await getActiveCustomers();
+      const lines = names.map(name => {
+        const rate = RESIDENT_RATES[name];
+        return rate
+          ? `- ${name} — $${Number(rate).toLocaleString('en-US', { minimumFractionDigits: 2 })}/month`
+          : `- ${name}`;
+      });
+      customerSection = `## Active Residents (pulled live from QuickBooks)\n${lines.join('\n')}`;
+    } catch (e) {
+      customerSection = '## Active Residents\nCustomer list unavailable — QB token may need refresh.';
+    }
+
+    const augmentedSystem = system + '\n\n' + customerSection;
+
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
     const completion = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [
-        { role: 'system', content: system },
+        { role: 'system', content: augmentedSystem },
         ...messages
       ],
       max_tokens: 1024

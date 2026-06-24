@@ -310,6 +310,38 @@
       transition: border-color 0.15s;
     }
 
+    /* --- Quick action buttons --- */
+    #quick-actions {
+      display: flex;
+      gap: 8px;
+      padding: 10px 16px;
+      overflow-x: auto;
+      flex-shrink: 0;
+      background: #f0ebe3;
+      border-top: 1px solid #e0d6cc;
+      scrollbar-width: none;
+    }
+
+    #quick-actions::-webkit-scrollbar { display: none; }
+
+    .quick-btn {
+      background: #5C3D1E;
+      color: #C49A2A;
+      border: none;
+      border-radius: 20px;
+      padding: 7px 16px;
+      font-size: 12.5px;
+      font-weight: 600;
+      font-family: inherit;
+      white-space: nowrap;
+      cursor: pointer;
+      flex-shrink: 0;
+      letter-spacing: 0.02em;
+      transition: background 0.15s;
+    }
+
+    .quick-btn:hover { background: #7a5230; }
+
     /* --- Input row --- */
     #input-row {
       background: #fff;
@@ -370,6 +402,14 @@
   </header>
 
   <div id="messages"></div>
+
+  <div id="quick-actions">
+    <button class="quick-btn" data-action="create invoices">Create Invoices</button>
+    <button class="quick-btn" data-action="record a payment">Record Payment</button>
+    <button class="quick-btn" data-action="add a new resident">Add Resident</button>
+    <button class="quick-btn" data-action="show overdue invoices">Overdue Invoices</button>
+    <button class="quick-btn" data-action="ask a question">Ask a Question</button>
+  </div>
 
   <div id="input-row">
     <textarea id="user-input" rows="1" placeholder="Ask about recording a transaction…"></textarea>
@@ -863,6 +903,83 @@ function cancelResident(card) {
   history.push({ role: 'assistant', content: 'New resident creation cancelled.' });
 }
 
+// --- Overdue summary card ---
+
+async function showOverdueSummary() {
+  const card = document.createElement('div');
+  card.className = 'preview-card';
+  card.innerHTML = '<p class="preview-status">Fetching overdue invoices from QuickBooks…</p>';
+  messagesEl.appendChild(card);
+  card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+  try {
+    const res = await fetch('/qb/overdue-summary', { method: 'POST' });
+    const data = await res.json();
+
+    if (!res.ok) {
+      card.innerHTML = `<p class="preview-status" style="color:#9b0000">${data.error || 'Could not load overdue invoices.'}</p>`;
+      return;
+    }
+
+    if (!data.count) {
+      card.innerHTML = `<div class="preview-title">Overdue Invoices</div><p class="preview-all-done" style="margin-top:8px">No overdue invoices. All residents are current!</p>`;
+      return;
+    }
+
+    const rows = data.items.map(inv => {
+      const urgencyColor = inv.daysOverdue > 30
+        ? 'color:#9b0000;font-weight:600'
+        : inv.daysOverdue > 14
+          ? 'color:#b07000;font-weight:600'
+          : 'color:#2a1a08';
+      return `
+        <tr>
+          <td>${inv.customerName}</td>
+          <td>#${inv.invoiceNumber}</td>
+          <td style="${urgencyColor}">${inv.daysOverdue}d overdue</td>
+          <td class="amount" style="${urgencyColor}">${fmt(inv.balance)}</td>
+        </tr>`;
+    }).join('');
+
+    card.innerHTML = `
+      <div class="preview-title">Overdue Invoices</div>
+      <div class="preview-meta">${data.count} invoice${data.count !== 1 ? 's' : ''} past due</div>
+      <table class="preview-table">
+        <thead>
+          <tr>
+            <th>Resident</th>
+            <th>Invoice #</th>
+            <th>Days Overdue</th>
+            <th class="amount">Balance</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3"><strong>Total Outstanding</strong></td>
+            <td class="amount"><strong style="color:#9b0000">${fmt(data.total)}</strong></td>
+          </tr>
+        </tfoot>
+      </table>`;
+
+    card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  } catch (e) {
+    card.innerHTML = `<p class="preview-status" style="color:#9b0000">Error: ${e.message}</p>`;
+  }
+}
+
+// --- Quick action buttons ---
+
+function triggerAction(action) {
+  inputEl.value = action;
+  inputEl.dispatchEvent(new Event('input'));
+  sendMessage();
+}
+
+document.querySelectorAll('.quick-btn').forEach(btn => {
+  btn.addEventListener('click', () => triggerAction(btn.dataset.action));
+});
+
 // --- Main send flow ---
 
 async function sendMessage() {
@@ -903,6 +1020,8 @@ async function sendMessage() {
         showPaymentCard(data.paymentData);
       } else if (data.intent === 'add-resident') {
         showNewResidentCard();
+      } else if (data.intent === 'overdue-summary') {
+        showOverdueSummary();
       }
     }
   } catch (e) {

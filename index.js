@@ -671,6 +671,7 @@ app.post('/api/chat', async (req, res) => {
     const INVOICE_KEYWORDS = ['create invoice', 'create invoices', 'make invoice', 'invoices for', 'bill residents', 'monthly invoices'];
     const PAYMENT_KEYWORDS = ['record payment', 'received payment', 'payment from', 'log payment'];
     const RESIDENT_KEYWORDS = ['add resident', 'new resident', 'add client', 'new client', 'move in', 'add patient', 'new patient'];
+    const OVERDUE_KEYWORDS = ['overdue', 'unpaid', 'who owes', 'outstanding balance', 'past due', 'show overdue'];
 
     let intent = null;
     let paymentData = null;
@@ -689,6 +690,8 @@ app.post('/api/chat', async (req, res) => {
       paymentData = { customerName: extractedName, amount: extractedAmount || rateAmount };
     } else if (RESIDENT_KEYWORDS.some(kw => userMsgLower.includes(kw))) {
       intent = 'add-resident';
+    } else if (OVERDUE_KEYWORDS.some(kw => userMsgLower.includes(kw))) {
+      intent = 'overdue-summary';
     }
 
     res.json({ text, intent, paymentData });
@@ -855,6 +858,31 @@ app.post('/qb/record-payment', async (req, res) => {
     res.json({ success: true, paymentId: result.Payment?.Id, amount: paymentAmount });
   } catch (e) {
     console.error('Record payment error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/qb/overdue-summary', async (req, res) => {
+  try {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const data = await qbQuery(
+      `SELECT * FROM Invoice WHERE Balance > '0' AND DueDate < '${todayStr}' ORDER BY DueDate ASC MAXRESULTS 100`
+    );
+    const invoices = data.QueryResponse?.Invoice || [];
+
+    const items = invoices.map(inv => ({
+      customerName: inv.CustomerRef?.name || 'Unknown',
+      invoiceNumber: inv.DocNumber,
+      dueDate: inv.DueDate,
+      daysOverdue: Math.floor((today - new Date(inv.DueDate)) / (1000 * 60 * 60 * 24)),
+      balance: Number(inv.Balance)
+    }));
+
+    const total = items.reduce((sum, i) => sum + i.balance, 0);
+    res.json({ items, total, count: items.length });
+  } catch (e) {
+    console.error('Overdue summary error:', e);
     res.status(500).json({ error: e.message });
   }
 });

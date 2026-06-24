@@ -6,6 +6,9 @@ const OAuthClient = require('intuit-oauth');
 const { google } = require('googleapis');
 const Groq = require('groq-sdk');
 const { createClient } = require('@supabase/supabase-js');
+const session = require('express-session');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -13,7 +16,45 @@ const supabase = createClient(
 );
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json());
+
+// --- Session & Google OAuth ---
+
+const allowedEmails = (process.env.ALLOWED_EMAILS || '')
+  .split(',').map(e => e.trim()).filter(Boolean);
+
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    secure: process.env.NODE_ENV === 'production'
+  }
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+const googleCallbackURL = process.env.RENDER_EXTERNAL_URL
+  ? `${process.env.RENDER_EXTERNAL_URL}/auth/google/callback`
+  : 'http://localhost:3000/auth/google/callback';
+
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: googleCallbackURL
+}, (accessToken, refreshToken, profile, done) => {
+  const email = profile.emails?.[0]?.value;
+  if (!email || !allowedEmails.includes(email)) {
+    return done(null, false);
+  }
+  return done(null, { email, name: profile.displayName });
+}));
+
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((user, done) => done(null, user));
 
 // QuickBooks OAuth
 const oauthClient = new OAuthClient({
@@ -147,6 +188,16 @@ async function qbCreate(endpoint, body) {
   return JSON.parse(response.body);
 }
 
+function requireLogin(req, res, next) {
+  if (req.isAuthenticated()) return next();
+  res.redirect('/login');
+}
+
+function requireLoginApi(req, res, next) {
+  if (req.isAuthenticated()) return next();
+  res.status(401).json({ error: 'Session expired. Please sign in again.' });
+}
+
 async function ensureQBToken(req, res, next) {
   if (!qbRealmId) {
     return res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });
@@ -164,7 +215,122 @@ async function ensureQBToken(req, res, next) {
   next();
 }
 
-app.use(['/qb', '/run-check', '/run-30-day-alert', '/run-monthly-invoices', '/overdue-invoices', '/30-day-alert', '/monthly-invoices'], ensureQBToken);
+app.use('/qb', requireLoginApi, ensureQBToken);
+app.use(['/run-check', '/run-30-day-alert', '/run-monthly-invoices', '/overdue-invoices', '/30-day-alert', '/monthly-invoices'], ensureQBToken);
+
+// --- Auth routes ---
+
+function loginPage(errorMsg) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Mi Casa Care Homes</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #ede8e1;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 48px 40px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(92,61,30,0.12);
+    }
+    .logo {
+      width: 64px;
+      height: 64px;
+      background: #5C3D1E;
+      border-radius: 16px;
+      margin: 0 auto 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+    }
+    h1 { font-size: 22px; font-weight: 700; color: #3B2107; margin-bottom: 8px; }
+    .subtitle { font-size: 14px; color: #888; margin-bottom: 32px; }
+    .error {
+      background: #fff0f0;
+      border: 1px solid #f5c2c7;
+      color: #9b0000;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      margin-bottom: 24px;
+      text-align: left;
+    }
+    .google-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: #5C3D1E;
+      color: #C49A2A;
+      text-decoration: none;
+      border-radius: 10px;
+      padding: 14px 24px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      transition: background 0.15s;
+    }
+    .google-btn:hover { background: #7a5230; }
+    footer { margin-top: 32px; font-size: 12px; color: #bbb; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">🏠</div>
+    <h1>Casa QuickBooks Companion</h1>
+    <p class="subtitle">Mi Casa Care Homes LLC &mdash; Staff Access Only</p>
+    ${errorMsg ? `<div class="error">${errorMsg}</div>` : ''}
+    <a href="/auth/google" class="google-btn">
+      <svg width="20" height="20" viewBox="0 0 48 48">
+        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+      </svg>
+      Sign in with Google
+    </a>
+    <footer>&copy; ${new Date().getFullYear()} Mi Casa Care Homes LLC</footer>
+  </div>
+</body>
+</html>`;
+}
+
+app.get('/login', (req, res) => {
+  if (req.isAuthenticated()) return res.redirect('/assistant');
+  const error = req.query.error === 'unauthorized'
+    ? 'Your Google account is not authorized. Contact your administrator.'
+    : null;
+  res.send(loginPage(error));
+});
+
+app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/login?error=unauthorized' }),
+  (req, res) => res.redirect('/assistant')
+);
+
+app.get('/auth/logout', (req, res) => {
+  req.logout(err => {
+    if (err) console.error('Logout error:', err);
+    res.redirect('/login');
+  });
+});
 
 // QuickBooks connect route
 app.get('/connect', (req, res) => {
@@ -623,11 +789,11 @@ app.get('/privacy', (req, res) => {
 });
 
 
-app.get('/assistant', (req, res) => {
+app.get('/assistant', requireLogin, (req, res) => {
   res.sendFile(__dirname + '/assistant.html');
 });
 
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', requireLoginApi, async (req, res) => {
   try {
     const { messages, system } = req.body;
 

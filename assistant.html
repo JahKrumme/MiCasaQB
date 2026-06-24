@@ -30,6 +30,7 @@
       padding: 16px 20px;
       flex-shrink: 0;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      position: relative;
     }
 
     header h1 {
@@ -44,6 +45,19 @@
       color: rgba(255,255,255,0.75);
       margin-top: 2px;
     }
+
+    #logout-btn {
+      position: absolute;
+      top: 50%;
+      right: 20px;
+      transform: translateY(-50%);
+      color: rgba(255,255,255,0.55);
+      font-size: 12px;
+      text-decoration: none;
+      padding: 4px 0;
+    }
+
+    #logout-btn:hover { color: #C49A2A; }
 
     #messages {
       flex: 1;
@@ -399,6 +413,7 @@
   <header>
     <h1>Casa QuickBooks Companion</h1>
     <p>Powered by Mi Casa Care Homes</p>
+    <a href="/auth/logout" id="logout-btn">Sign out</a>
   </header>
 
   <div id="messages"></div>

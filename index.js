@@ -353,7 +353,7 @@ async function requireAdmin(req, res, next) {
   if (!email) return res.redirect('/assistant');
   try {
     const { data } = await supabase
-      .from('admin_emails')
+      .from('allowed_emails')
       .select('email')
       .eq('email', email)
       .single();
@@ -369,7 +369,7 @@ async function requireAdminApi(req, res, next) {
   if (!email) return res.status(403).json({ error: 'Access denied' });
   try {
     const { data } = await supabase
-      .from('admin_emails')
+      .from('allowed_emails')
       .select('email')
       .eq('email', email)
       .single();

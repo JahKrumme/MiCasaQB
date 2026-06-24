@@ -192,6 +192,16 @@
 
     .preview-table td.status-found { color: #2d6a2d; font-weight: 600; }
     .preview-table td.status-missing { color: #9b0000; font-weight: 600; }
+    .preview-table td.status-already { color: #aaa; font-style: italic; }
+    .preview-table tr.row-dimmed td { color: #bbb; }
+    .preview-table tr.row-dimmed td.status-already { color: #bbb; }
+
+    .preview-card .preview-all-done {
+      font-size: 13px;
+      color: #888;
+      font-style: italic;
+      padding: 6px 0;
+    }
 
     .preview-actions {
       display: flex;
@@ -464,13 +474,37 @@ async function showInvoicePreview() {
 
     const { preview, invoiceDate, dueDate, total } = data;
 
-    const rows = preview.map(r => `
-      <tr>
-        <td>${r.name}</td>
-        <td class="amount">${fmt(r.amount)}</td>
-        <td>${r.dueDate}</td>
-        <td class="${r.customerId ? 'status-found' : 'status-missing'}">${r.customerId ? 'Ready' : 'Not found'}</td>
-      </tr>`).join('');
+    const allInvoiced = preview.every(r => r.alreadyInvoiced || !r.customerId);
+
+    const rows = preview.map(r => {
+      let statusClass, statusText;
+      if (r.alreadyInvoiced) {
+        statusClass = 'status-already';
+        statusText = 'Already invoiced';
+      } else if (!r.customerId) {
+        statusClass = 'status-missing';
+        statusText = 'Not found';
+      } else {
+        statusClass = 'status-found';
+        statusText = 'Ready';
+      }
+      return `
+        <tr class="${r.alreadyInvoiced ? 'row-dimmed' : ''}">
+          <td>${r.name}</td>
+          <td class="amount">${fmt(r.amount)}</td>
+          <td>${r.dueDate}</td>
+          <td class="${statusClass}">${statusText}</td>
+        </tr>`;
+    }).join('');
+
+    const pendingTotal = preview
+      .filter(r => r.customerId && !r.alreadyInvoiced)
+      .reduce((sum, r) => sum + r.amount, 0);
+
+    const actionsHTML = allInvoiced
+      ? `<div class="preview-all-done">All residents have already been invoiced this month.</div>`
+      : `<button class="btn-confirm">Confirm — Create Invoices</button>
+         <button class="btn-cancel">Cancel</button>`;
 
     card.innerHTML = `
       <div class="preview-title">Monthly Invoice Preview</div>
@@ -487,21 +521,20 @@ async function showInvoicePreview() {
         <tbody>${rows}</tbody>
         <tfoot>
           <tr>
-            <td><strong>Total</strong></td>
-            <td class="amount"><strong>${fmt(total)}</strong></td>
+            <td><strong>${allInvoiced ? 'Total' : 'Pending total'}</strong></td>
+            <td class="amount"><strong>${fmt(allInvoiced ? total : pendingTotal)}</strong></td>
             <td colspan="2"></td>
           </tr>
         </tfoot>
       </table>
-      <div class="preview-actions">
-        <button class="btn-confirm">Confirm — Create Invoices</button>
-        <button class="btn-cancel">Cancel</button>
-      </div>`;
+      <div class="preview-actions">${actionsHTML}</div>`;
 
     card.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
-    card.querySelector('.btn-confirm').addEventListener('click', () => confirmCreateInvoices(preview, card));
-    card.querySelector('.btn-cancel').addEventListener('click', () => cancelInvoices(card));
+    if (!allInvoiced) {
+      card.querySelector('.btn-confirm').addEventListener('click', () => confirmCreateInvoices(preview, card));
+      card.querySelector('.btn-cancel').addEventListener('click', () => cancelInvoices(card));
+    }
 
   } catch (e) {
     card.innerHTML = `<p class="preview-status" style="color:#9b0000">Error: ${e.message}</p>`;

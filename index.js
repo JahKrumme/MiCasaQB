@@ -646,19 +646,35 @@ app.post('/api/chat', async (req, res) => {
 app.post('/qb/preview-invoices', async (req, res) => {
   if (!qbRealmId) return res.status(503).json({ error: 'QuickBooks not connected — visit /connect to authorize.' });
   try {
-    const data = await qbQuery('SELECT * FROM Customer WHERE Active = true MAXRESULTS 100');
-    const customers = data.QueryResponse?.Customer || [];
-
     const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
     const invoiceDate = new Date(today.getFullYear(), today.getMonth(), 20).toISOString().split('T')[0];
     const dueDate = new Date(today.getFullYear(), today.getMonth() + 1, 1).toISOString().split('T')[0];
+
+    const [custData, existingData] = await Promise.all([
+      qbQuery('SELECT * FROM Customer WHERE Active = true MAXRESULTS 100'),
+      qbQuery(`SELECT * FROM Invoice WHERE TxnDate >= '${firstDay}' AND TxnDate <= '${lastDay}' MAXRESULTS 100`)
+    ]);
+
+    const customers = custData.QueryResponse?.Customer || [];
+    const existingInvoices = existingData.QueryResponse?.Invoice || [];
+    const invoicedCustomerIds = new Set(existingInvoices.map(inv => inv.CustomerRef?.value));
 
     const preview = Object.entries(RESIDENT_RATES).map(([name, amount]) => {
       const customer = customers.find(c =>
         c.DisplayName?.toLowerCase() === name.toLowerCase() ||
         c.FullyQualifiedName?.toLowerCase() === name.toLowerCase()
       );
-      return { name, customerId: customer?.Id || null, amount, invoiceDate, dueDate };
+      const customerId = customer?.Id || null;
+      return {
+        name,
+        customerId,
+        amount,
+        invoiceDate,
+        dueDate,
+        alreadyInvoiced: customerId ? invoicedCustomerIds.has(customerId) : false
+      };
     });
 
     const total = Object.values(RESIDENT_RATES).reduce((a, b) => a + b, 0);
@@ -683,6 +699,10 @@ app.post('/qb/create-invoices', async (req, res) => {
     for (const r of preview) {
       if (!r.customerId) {
         results.push({ name: r.name, status: 'skipped', reason: 'Customer not found in QuickBooks' });
+        continue;
+      }
+      if (r.alreadyInvoiced) {
+        results.push({ name: r.name, status: 'skipped', reason: 'Already invoiced this month' });
         continue;
       }
       try {

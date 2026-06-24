@@ -3,53 +3,46 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Casa QuickBooks Companion</title>
+  <title>Casa QuickBooks Companion | Mi Casa Care Homes</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #f4f0eb;
+      background: #ede8e1;
+      height: 100dvh;
+      display: flex;
+      justify-content: center;
+    }
+
+    #app {
+      width: 100%;
+      max-width: 700px;
       height: 100dvh;
       display: flex;
       flex-direction: column;
+      background: #f7f3ee;
+      box-shadow: 0 0 40px rgba(0,0,0,0.12);
     }
 
     header {
       background: #5C3D1E;
-      color: #fff;
-      padding: 14px 20px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
+      padding: 16px 20px;
       flex-shrink: 0;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-    }
-
-    header .logo {
-      width: 36px;
-      height: 36px;
-      background: #C49A2A;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 700;
-      font-size: 15px;
-      color: #fff;
-      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     }
 
     header h1 {
-      font-size: 17px;
-      font-weight: 600;
+      font-size: 18px;
+      font-weight: 700;
+      color: #C49A2A;
       letter-spacing: 0.01em;
     }
 
     header p {
       font-size: 12px;
-      color: rgba(255,255,255,0.65);
-      margin-top: 1px;
+      color: rgba(255,255,255,0.75);
+      margin-top: 2px;
     }
 
     #messages {
@@ -58,48 +51,50 @@
       padding: 20px 16px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px;
+      scroll-behavior: smooth;
     }
 
     .bubble {
-      max-width: 80%;
+      max-width: 82%;
       padding: 12px 16px;
-      border-radius: 16px;
+      border-radius: 18px;
       font-size: 14px;
-      line-height: 1.55;
+      line-height: 1.6;
       word-break: break-word;
     }
 
     .bubble.assistant {
-      background: #fff;
-      color: #222;
+      background: #FDF6E3;
+      color: #3B2107;
       border-bottom-left-radius: 4px;
       align-self: flex-start;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
     }
 
     .bubble.user {
-      background: #5C3D1E;
+      background: #C49A2A;
       color: #fff;
       border-bottom-right-radius: 4px;
       align-self: flex-end;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
     }
 
     .bubble.error {
       background: #fff0f0;
-      color: #b00020;
+      color: #9b0000;
       border: 1px solid #f5c2c7;
       align-self: flex-start;
       border-bottom-left-radius: 4px;
     }
 
     .bubble p + p { margin-top: 8px; }
-    .bubble ul, .bubble ol { padding-left: 18px; margin-top: 6px; }
-    .bubble li { margin-bottom: 3px; }
+    .bubble ul, .bubble ol { padding-left: 20px; margin-top: 6px; }
+    .bubble li { margin-bottom: 4px; }
     .bubble strong { font-weight: 600; }
     .bubble code {
-      background: rgba(0,0,0,0.07);
-      padding: 1px 4px;
+      background: rgba(0,0,0,0.08);
+      padding: 1px 5px;
       border-radius: 3px;
       font-size: 12.5px;
       font-family: 'SF Mono', 'Fira Code', monospace;
@@ -108,18 +103,18 @@
     .typing {
       display: flex;
       align-items: center;
-      gap: 5px;
-      padding: 14px 16px;
-      background: #fff;
-      border-radius: 16px;
+      gap: 6px;
+      padding: 14px 18px;
+      background: #FDF6E3;
+      border-radius: 18px;
       border-bottom-left-radius: 4px;
       align-self: flex-start;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
     }
 
     .typing span {
-      width: 7px;
-      height: 7px;
+      width: 8px;
+      height: 8px;
       background: #C49A2A;
       border-radius: 50%;
       animation: bounce 1.2s infinite;
@@ -129,13 +124,13 @@
     .typing span:nth-child(3) { animation-delay: 0.4s; }
 
     @keyframes bounce {
-      0%, 60%, 100% { transform: translateY(0); }
-      30% { transform: translateY(-6px); }
+      0%, 60%, 100% { transform: translateY(0); opacity: 1; }
+      30% { transform: translateY(-7px); opacity: 0.7; }
     }
 
     #input-row {
       background: #fff;
-      border-top: 1px solid #e5ddd4;
+      border-top: 1px solid #e0d6cc;
       padding: 12px 16px;
       display: flex;
       gap: 10px;
@@ -146,69 +141,61 @@
     #user-input {
       flex: 1;
       border: 1.5px solid #d6c9bc;
-      border-radius: 20px;
+      border-radius: 22px;
       padding: 10px 16px;
       font-size: 14px;
       font-family: inherit;
       resize: none;
       outline: none;
-      line-height: 1.45;
+      line-height: 1.5;
       max-height: 120px;
       overflow-y: auto;
-      color: #222;
+      color: #2a1a08;
+      background: #faf7f4;
       transition: border-color 0.15s;
     }
 
+    #user-input::placeholder { color: #a9998a; }
+
     #user-input:focus {
       border-color: #C49A2A;
+      background: #fff;
     }
 
     #send-btn {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
+      height: 42px;
+      padding: 0 20px;
+      border-radius: 22px;
       border: none;
       background: #5C3D1E;
-      color: #fff;
+      color: #C49A2A;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
       cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       flex-shrink: 0;
+      letter-spacing: 0.02em;
       transition: background 0.15s, opacity 0.15s;
     }
 
     #send-btn:hover { background: #7a5230; }
     #send-btn:disabled { opacity: 0.4; cursor: default; }
-
-    #send-btn svg {
-      width: 18px;
-      height: 18px;
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
   </style>
 </head>
 <body>
 
-<header>
-  <div class="logo">MC</div>
-  <div>
+<div id="app">
+  <header>
     <h1>Casa QuickBooks Companion</h1>
-    <p>QuickBooks step-by-step guidance</p>
+    <p>Powered by Mi Casa Care Homes</p>
+  </header>
+
+  <div id="messages"></div>
+
+  <div id="input-row">
+    <textarea id="user-input" rows="1" placeholder="Ask about recording a transaction…"></textarea>
+    <button id="send-btn">Send</button>
   </div>
-</header>
-
-<div id="messages"></div>
-
-<div id="input-row">
-  <textarea id="user-input" rows="1" placeholder="Ask about recording a transaction…"></textarea>
-  <button id="send-btn" title="Send">
-    <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-  </button>
 </div>
 
 <script>
@@ -317,7 +304,7 @@ function addBubble(role, text) {
   div.className = `bubble ${role}`;
   div.innerHTML = `<p>${renderMarkdown(text)}</p>`;
   messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
   return div;
 }
 
@@ -327,7 +314,7 @@ function showTyping() {
   div.id = 'typing-indicator';
   div.innerHTML = '<span></span><span></span><span></span>';
   messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
 function removeTyping() {

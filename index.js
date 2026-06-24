@@ -337,6 +337,314 @@ app.get('/auth/logout', (req, res) => {
   });
 });
 
+// --- Admin routes ---
+
+async function requireAdmin(req, res, next) {
+  const email = req.user?.email;
+  if (!email) return res.redirect('/assistant');
+  try {
+    const { data } = await supabase
+      .from('admin_emails')
+      .select('email')
+      .eq('email', email)
+      .single();
+    if (!data) return res.redirect('/assistant');
+    next();
+  } catch (e) {
+    res.redirect('/assistant');
+  }
+}
+
+async function requireAdminApi(req, res, next) {
+  const email = req.user?.email;
+  if (!email) return res.status(403).json({ error: 'Access denied' });
+  try {
+    const { data } = await supabase
+      .from('admin_emails')
+      .select('email')
+      .eq('email', email)
+      .single();
+    if (!data) return res.status(403).json({ error: 'Access denied' });
+    next();
+  } catch (e) {
+    res.status(403).json({ error: 'Access denied' });
+  }
+}
+
+const adminPage = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Mi Casa Care Homes</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #ede8e1;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+    .page {
+      width: 100%;
+      max-width: 560px;
+    }
+    header {
+      background: #5C3D1E;
+      border-radius: 14px 14px 0 0;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #C49A2A;
+      flex: 1;
+    }
+    header a {
+      color: rgba(255,255,255,0.6);
+      text-decoration: none;
+      font-size: 13px;
+    }
+    header a:hover { color: #C49A2A; }
+    .card {
+      background: #fff;
+      border-radius: 0 0 14px 14px;
+      box-shadow: 0 4px 24px rgba(92,61,30,0.12);
+      overflow: hidden;
+    }
+    .section {
+      padding: 24px;
+      border-bottom: 1px solid #f0ebe3;
+    }
+    .section:last-child { border-bottom: none; }
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #888;
+      margin-bottom: 16px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    td {
+      padding: 10px 0;
+      font-size: 14px;
+      color: #2a1a08;
+      border-bottom: 1px solid #f5f1ec;
+    }
+    tr:last-child td { border-bottom: none; }
+    td.email-cell { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; }
+    td.action-cell { text-align: right; width: 80px; }
+    .btn-remove {
+      background: none;
+      border: 1px solid #e0b0b0;
+      color: #9b0000;
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.15s;
+    }
+    .btn-remove:hover { background: #fff0f0; }
+    .empty { color: #aaa; font-size: 14px; font-style: italic; }
+    .add-row {
+      display: flex;
+      gap: 10px;
+    }
+    .add-row input {
+      flex: 1;
+      border: 1.5px solid #d6c9bc;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-family: inherit;
+      color: #2a1a08;
+      background: #faf7f4;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .add-row input:focus { border-color: #C49A2A; background: #fff; }
+    .btn-add {
+      background: #5C3D1E;
+      color: #C49A2A;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .btn-add:hover { background: #7a5230; }
+    .btn-add:disabled { opacity: 0.4; cursor: default; }
+    #toast {
+      margin-top: 16px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+    #toast.success { background: #f0fff4; border: 1px solid #a3d9a5; color: #2d6a2d; display: block; }
+    #toast.error { background: #fff0f0; border: 1px solid #f5c2c7; color: #9b0000; display: block; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Access Management</h1>
+    <a href="/assistant">&larr; Back to Companion</a>
+  </header>
+  <div class="card">
+    <div class="section">
+      <div class="section-title">Allowed Emails</div>
+      <table id="email-table"><tbody id="email-list"><tr><td class="empty">Loading&hellip;</td></tr></tbody></table>
+    </div>
+    <div class="section">
+      <div class="section-title">Add Email</div>
+      <div class="add-row">
+        <input type="email" id="new-email" placeholder="name@example.com">
+        <button class="btn-add" id="add-btn">Add</button>
+      </div>
+      <div id="toast"></div>
+    </div>
+  </div>
+</div>
+<script>
+async function loadEmails() {
+  const tbody = document.getElementById('email-list');
+  try {
+    const res = await fetch('/admin/emails');
+    const data = await res.json();
+    if (!data.emails || data.emails.length === 0) {
+      tbody.innerHTML = '<tr><td class="empty">No emails in the allowed list.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.emails.map(e => \`
+      <tr>
+        <td class="email-cell">\${e.email}</td>
+        <td class="action-cell">
+          <button class="btn-remove" onclick="removeEmail('\${e.email}')">Remove</button>
+        </td>
+      </tr>\`).join('');
+  } catch (err) {
+    tbody.innerHTML = '<tr><td class="empty" style="color:#9b0000">Failed to load emails.</td></tr>';
+  }
+}
+
+function showToast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = type;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = ''; el.style.display = 'none'; }, 4000);
+}
+
+async function removeEmail(email) {
+  try {
+    const res = await fetch('/admin/remove-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Failed to remove email.', 'error'); return; }
+    showToast(email + ' removed.', 'success');
+    loadEmails();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+document.getElementById('add-btn').addEventListener('click', async () => {
+  const input = document.getElementById('new-email');
+  const email = input.value.trim().toLowerCase();
+  if (!email) return;
+  const btn = document.getElementById('add-btn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/admin/add-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Failed to add email.', 'error'); }
+    else { showToast(email + ' added.', 'success'); input.value = ''; loadEmails(); }
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+  btn.disabled = false;
+});
+
+document.getElementById('new-email').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('add-btn').click();
+});
+
+loadEmails();
+</script>
+</body>
+</html>`;
+
+app.get('/admin', requireLogin, requireAdmin, (req, res) => {
+  res.send(adminPage);
+});
+
+app.get('/admin/emails', requireLogin, requireAdminApi, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('allowed_emails')
+      .select('email')
+      .order('email', { ascending: true });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ emails: data });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/admin/add-email', requireLogin, requireAdminApi, async (req, res) => {
+  const { email } = req.body;
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ error: 'Invalid email address.' });
+  }
+  try {
+    const { error } = await supabase
+      .from('allowed_emails')
+      .insert({ email: email.toLowerCase().trim() });
+    if (error) {
+      if (error.code === '23505') return res.status(409).json({ error: 'Email is already in the list.' });
+      return res.status(500).json({ error: error.message });
+    }
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/admin/remove-email', requireLogin, requireAdminApi, async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email is required.' });
+  try {
+    const { error } = await supabase
+      .from('allowed_emails')
+      .delete()
+      .eq('email', email.toLowerCase().trim());
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // QuickBooks connect route
 app.get('/connect', (req, res) => {
   const authUri = oauthClient.authorizeUri({

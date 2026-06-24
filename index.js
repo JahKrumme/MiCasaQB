@@ -670,6 +670,7 @@ app.post('/api/chat', async (req, res) => {
 
     const INVOICE_KEYWORDS = ['create invoice', 'create invoices', 'make invoice', 'invoices for', 'bill residents', 'monthly invoices'];
     const PAYMENT_KEYWORDS = ['record payment', 'received payment', 'payment from', 'log payment'];
+    const RESIDENT_KEYWORDS = ['add resident', 'new resident', 'add client', 'new client', 'move in', 'add patient', 'new patient'];
 
     let intent = null;
     let paymentData = null;
@@ -686,6 +687,8 @@ app.post('/api/chat', async (req, res) => {
       ) || null;
       const rateAmount = extractedName ? (customerRates[extractedName] || null) : null;
       paymentData = { customerName: extractedName, amount: extractedAmount || rateAmount };
+    } else if (RESIDENT_KEYWORDS.some(kw => userMsgLower.includes(kw))) {
+      intent = 'add-resident';
     }
 
     res.json({ text, intent, paymentData });
@@ -852,6 +855,55 @@ app.post('/qb/record-payment', async (req, res) => {
     res.json({ success: true, paymentId: result.Payment?.Id, amount: paymentAmount });
   } catch (e) {
     console.error('Record payment error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/qb/preview-resident', async (req, res) => {
+  try {
+    const { name, paymentType, monthlyRate, moveInDate } = req.body;
+
+    const custData = await qbQuery('SELECT * FROM Customer WHERE Active = true MAXRESULTS 100');
+    const customers = custData.QueryResponse?.Customer || [];
+    const duplicate = customers.find(c =>
+      c.DisplayName?.toLowerCase() === name.toLowerCase()
+    );
+
+    res.json({
+      name,
+      paymentType,
+      monthlyRate: Number(monthlyRate),
+      moveInDate,
+      isDuplicate: !!duplicate
+    });
+  } catch (e) {
+    console.error('Preview resident error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/qb/create-resident', async (req, res) => {
+  try {
+    const { name, paymentType, monthlyRate, moveInDate } = req.body;
+
+    const notes = `Payment type: ${paymentType} | Monthly rate: $${Number(monthlyRate).toLocaleString('en-US', { minimumFractionDigits: 2 })} | Move-in date: ${moveInDate}`;
+
+    const result = await qbCreate('customer', {
+      DisplayName: name,
+      PrintOnCheckName: name,
+      Notes: notes
+    });
+
+    res.json({
+      success: true,
+      customerId: result.Customer?.Id,
+      name,
+      monthlyRate: Number(monthlyRate),
+      paymentType,
+      moveInDate
+    });
+  } catch (e) {
+    console.error('Create resident error:', e);
     res.status(500).json({ error: e.message });
   }
 });

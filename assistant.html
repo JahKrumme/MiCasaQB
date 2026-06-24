@@ -290,9 +290,24 @@
       transition: border-color 0.15s;
     }
 
-    .payment-form input:focus {
+    .payment-form input:focus,
+    .payment-form select:focus {
       border-color: #C49A2A;
       background: #fff;
+    }
+
+    .payment-form select {
+      border: 1.5px solid #d6c9bc;
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      color: #2a1a08;
+      background: #faf7f4;
+      outline: none;
+      appearance: none;
+      cursor: pointer;
+      transition: border-color 0.15s;
     }
 
     /* --- Input row --- */
@@ -718,6 +733,136 @@ function cancelPayment(card) {
   history.push({ role: 'assistant', content: 'Payment recording cancelled.' });
 }
 
+// --- New resident card ---
+
+const today = new Date().toISOString().split('T')[0];
+
+function showNewResidentCard() {
+  const card = document.createElement('div');
+  card.className = 'preview-card';
+  messagesEl.appendChild(card);
+  card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  renderNewResidentForm(card);
+}
+
+function renderNewResidentForm(card) {
+  card.innerHTML = `
+    <div class="preview-title">Add New Resident</div>
+    <div class="payment-form">
+      <label>Full Name</label>
+      <input type="text" class="res-name" placeholder="e.g. Jane Smith">
+      <label>Payment Type</label>
+      <select class="res-type">
+        <option value="Private Pay">Private Pay</option>
+        <option value="KanCare">KanCare</option>
+        <option value="Long-term Care Insurance">Long-term Care Insurance</option>
+      </select>
+      <label>Monthly Rate ($)</label>
+      <input type="number" class="res-rate" placeholder="e.g. 3500">
+      <label>Move-in Date</label>
+      <input type="date" class="res-date" value="${today}">
+    </div>
+    <div class="preview-actions">
+      <button class="btn-confirm">Preview</button>
+      <button class="btn-cancel">Cancel</button>
+    </div>`;
+
+  card.querySelector('.btn-confirm').addEventListener('click', async () => {
+    const name = card.querySelector('.res-name').value.trim();
+    const paymentType = card.querySelector('.res-type').value;
+    const monthlyRate = parseFloat(card.querySelector('.res-rate').value);
+    const moveInDate = card.querySelector('.res-date').value;
+    if (!name || !monthlyRate) {
+      card.querySelector('.res-name').style.borderColor = name ? '' : '#9b0000';
+      card.querySelector('.res-rate').style.borderColor = monthlyRate ? '' : '#9b0000';
+      return;
+    }
+    await previewResident(card, { name, paymentType, monthlyRate, moveInDate });
+  });
+
+  card.querySelector('.btn-cancel').addEventListener('click', () => cancelResident(card));
+}
+
+async function previewResident(card, residentData) {
+  card.innerHTML = '<p class="preview-status">Checking QuickBooks for duplicates…</p>';
+
+  try {
+    const res = await fetch('/qb/preview-resident', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(residentData)
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      card.innerHTML = `<p class="preview-status" style="color:#9b0000">${data.error || 'Preview failed.'}</p>`;
+      return;
+    }
+
+    renderResidentPreview(card, data);
+  } catch (e) {
+    card.innerHTML = `<p class="preview-status" style="color:#9b0000">Error: ${e.message}</p>`;
+  }
+}
+
+function renderResidentPreview(card, data) {
+  const duplicateWarning = data.isDuplicate
+    ? `<div class="preview-status" style="color:#b07000;margin-bottom:12px">⚠ A customer named "${data.name}" already exists in QuickBooks. Creating another will result in a duplicate.</div>`
+    : '';
+
+  card.innerHTML = `
+    <div class="preview-title">New Resident Preview</div>
+    <div class="preview-meta">Review before adding to QuickBooks</div>
+    ${duplicateWarning}
+    <table class="preview-table">
+      <tbody>
+        <tr><td>Name</td><td><strong>${data.name}</strong></td></tr>
+        <tr><td>Payment Type</td><td>${data.paymentType}</td></tr>
+        <tr><td>Monthly Rate</td><td><strong style="color:#2d6a2d">${fmt(data.monthlyRate)}/month</strong></td></tr>
+        <tr><td>Move-in Date</td><td>${data.moveInDate}</td></tr>
+      </tbody>
+    </table>
+    <div class="preview-actions">
+      <button class="btn-confirm">Confirm — Add to QuickBooks</button>
+      <button class="btn-cancel">Cancel</button>
+    </div>`;
+
+  card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  card.querySelector('.btn-confirm').addEventListener('click', () => confirmCreateResident(data, card));
+  card.querySelector('.btn-cancel').addEventListener('click', () => cancelResident(card));
+}
+
+async function confirmCreateResident(data, card) {
+  card.querySelector('.preview-actions').innerHTML = '<p class="preview-status">Adding resident to QuickBooks…</p>';
+
+  try {
+    const res = await fetch('/qb/create-resident', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      card.querySelector('.preview-actions').innerHTML =
+        `<p class="preview-status" style="color:#9b0000">${result.error || 'Failed to create resident.'}</p>`;
+      return;
+    }
+
+    const msg = `✓ New resident ${result.name} has been added to QuickBooks at ${fmt(result.monthlyRate)}/month`;
+    card.querySelector('.preview-actions').innerHTML = `<div class="preview-success">${msg}</div>`;
+    history.push({ role: 'assistant', content: msg });
+  } catch (e) {
+    card.querySelector('.preview-actions').innerHTML =
+      `<p class="preview-status" style="color:#9b0000">Error: ${e.message}</p>`;
+  }
+}
+
+function cancelResident(card) {
+  card.querySelector('.preview-actions').innerHTML = '<p class="preview-cancelled">New resident creation cancelled.</p>';
+  history.push({ role: 'assistant', content: 'New resident creation cancelled.' });
+}
+
 // --- Main send flow ---
 
 async function sendMessage() {
@@ -756,6 +901,8 @@ async function sendMessage() {
         showInvoicePreview();
       } else if (data.intent === 'record-payment') {
         showPaymentCard(data.paymentData);
+      } else if (data.intent === 'add-resident') {
+        showNewResidentCard();
       }
     }
   } catch (e) {

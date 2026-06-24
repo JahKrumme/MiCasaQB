@@ -48,16 +48,6 @@ let qbRealmId = null;
 
 const RECIPIENTS = 'elijahkrumme@gmail.com, micasacarehomes@gmail.com, micasatyler@gmail.com, bom@wvmsks.com, office@wvmsks.com';
 
-const RESIDENT_RATES = {
-  'Beverly Herrell':  5885,
-  'Carmen Gonzalez':  2710,
-  'Joseph Trabert':   6955,
-  'Marcia Kerschner': 1084,
-  'Martha Warren':    2000,
-  'Randal Jewet':     11609.50,
-  'Todd Scott':       921
-};
-
 // --- helpers ---
 
 async function getGmailClient() {
@@ -126,6 +116,20 @@ async function getActiveCustomers() {
   const data = await qbQuery('SELECT * FROM Customer WHERE Active = true MAXRESULTS 100');
   const customers = data.QueryResponse?.Customer || [];
   return customers.map(c => c.DisplayName || c.FullyQualifiedName).filter(Boolean);
+}
+
+async function getResidentRates() {
+  if (!qbRealmId) throw new Error('QB not connected');
+  const data = await qbQuery('SELECT * FROM Invoice ORDER BY TxnDate DESC MAXRESULTS 200');
+  const invoices = data.QueryResponse?.Invoice || [];
+  const rates = {};
+  for (const inv of invoices) {
+    const name = inv.CustomerRef?.name;
+    if (name && !(name in rates)) {
+      rates[name] = Number(inv.TotalAmt);
+    }
+  }
+  return rates;
 }
 
 async function qbCreate(endpoint, body) {
@@ -627,17 +631,17 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { messages, system } = req.body;
 
-    // Inject live QB customer list into system prompt
+    // Inject live QB customer list and rates into system prompt
     let customerSection;
     try {
-      const names = await getActiveCustomers();
+      const [names, rates] = await Promise.all([getActiveCustomers(), getResidentRates()]);
       const lines = names.map(name => {
-        const rate = RESIDENT_RATES[name];
+        const rate = rates[name];
         return rate
-          ? `- ${name} — $${Number(rate).toLocaleString('en-US', { minimumFractionDigits: 2 })}/month`
-          : `- ${name}`;
+          ? `- ${name}: $${Number(rate).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+          : `- ${name}: rate unknown`;
       });
-      customerSection = `## Active Residents (pulled live from QuickBooks)\n${lines.join('\n')}`;
+      customerSection = `## Active Residents and Current Monthly Rates (pulled live from QuickBooks)\n${lines.join('\n')}`;
     } catch (e) {
       customerSection = '## Active Residents\nCustomer list unavailable — QB token may need refresh.';
     }
@@ -677,32 +681,34 @@ app.post('/qb/preview-invoices', async (req, res) => {
     const invoiceDate = new Date(today.getFullYear(), today.getMonth(), 20).toISOString().split('T')[0];
     const dueDate = new Date(today.getFullYear(), today.getMonth() + 1, 1).toISOString().split('T')[0];
 
-    const [custData, existingData] = await Promise.all([
+    const [custData, existingData, rates] = await Promise.all([
       qbQuery('SELECT * FROM Customer WHERE Active = true MAXRESULTS 100'),
-      qbQuery(`SELECT * FROM Invoice WHERE TxnDate >= '${firstDay}' AND TxnDate <= '${lastDay}' MAXRESULTS 100`)
+      qbQuery(`SELECT * FROM Invoice WHERE TxnDate >= '${firstDay}' AND TxnDate <= '${lastDay}' MAXRESULTS 100`),
+      getResidentRates()
     ]);
 
     const customers = custData.QueryResponse?.Customer || [];
     const existingInvoices = existingData.QueryResponse?.Invoice || [];
     const invoicedCustomerIds = new Set(existingInvoices.map(inv => inv.CustomerRef?.value));
 
-    const preview = Object.entries(RESIDENT_RATES).map(([name, amount]) => {
-      const customer = customers.find(c =>
-        c.DisplayName?.toLowerCase() === name.toLowerCase() ||
-        c.FullyQualifiedName?.toLowerCase() === name.toLowerCase()
-      );
-      const customerId = customer?.Id || null;
-      return {
-        name,
-        customerId,
-        amount,
-        invoiceDate,
-        dueDate,
-        alreadyInvoiced: customerId ? invoicedCustomerIds.has(customerId) : false
-      };
-    });
+    const preview = customers
+      .filter(c => {
+        const name = c.DisplayName || c.FullyQualifiedName;
+        return name && rates[name] !== undefined;
+      })
+      .map(c => {
+        const name = c.DisplayName || c.FullyQualifiedName;
+        return {
+          name,
+          customerId: c.Id,
+          amount: rates[name],
+          invoiceDate,
+          dueDate,
+          alreadyInvoiced: invoicedCustomerIds.has(c.Id)
+        };
+      });
 
-    const total = Object.values(RESIDENT_RATES).reduce((a, b) => a + b, 0);
+    const total = preview.reduce((sum, r) => sum + r.amount, 0);
     res.json({ preview, invoiceDate, dueDate, total });
   } catch (e) {
     console.error('Preview invoices error:', e);

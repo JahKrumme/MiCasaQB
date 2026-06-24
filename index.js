@@ -34,6 +34,16 @@ if (process.env.INTUIT_REFRESH_TOKEN && qbRealmId) {
 
 const RECIPIENTS = 'elijahkrumme@gmail.com, micasacarehomes@gmail.com, micasatyler@gmail.com, bom@wvmsks.com, office@wvmsks.com';
 
+const RESIDENT_RATES = {
+  'Beverly Herrell':  5885,
+  'Carmen Gonzalez':  2710,
+  'Joseph Trabert':   6955,
+  'Marcia Kerschner': 1084,
+  'Martha Warren':    2000,
+  'Randal Jewet':     11609.50,
+  'Todd Scott':       921
+};
+
 // --- helpers ---
 
 async function getGmailClient() {
@@ -94,6 +104,21 @@ async function qbQuery(query) {
     : 'https://quickbooks.api.intuit.com';
   const url = `${base}/v3/company/${qbRealmId}/query?query=${encodeURIComponent(query)}&minorversion=65`;
   const response = await oauthClient.makeApiCall({ url });
+  return JSON.parse(response.body);
+}
+
+async function qbCreate(endpoint, body) {
+  await oauthClient.refresh();
+  const base = process.env.INTUIT_ENVIRONMENT === 'sandbox'
+    ? 'https://sandbox-quickbooks.api.intuit.com'
+    : 'https://quickbooks.api.intuit.com';
+  const url = `${base}/v3/company/${qbRealmId}/${endpoint}?minorversion=65`;
+  const response = await oauthClient.makeApiCall({
+    url,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(body)
+  });
   return JSON.parse(response.body);
 }
 
@@ -580,9 +605,88 @@ app.post('/api/chat', async (req, res) => {
     });
 
     const text = completion.choices[0].message.content;
-    res.json({ text });
+
+    const INVOICE_KEYWORDS = ['create invoice', 'create invoices', 'make invoice', 'invoices for', 'bill residents', 'monthly invoices'];
+    const userMsg = (messages[messages.length - 1]?.content || '').toLowerCase();
+    const intent = INVOICE_KEYWORDS.some(kw => userMsg.includes(kw)) ? 'create-invoices' : null;
+
+    res.json({ text, intent });
   } catch (e) {
     console.error('Chat proxy error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/qb/preview-invoices', async (req, res) => {
+  if (!qbRealmId) return res.status(503).json({ error: 'QuickBooks not connected — visit /connect to authorize.' });
+  try {
+    const data = await qbQuery('SELECT * FROM Customer WHERE Active = true MAXRESULTS 100');
+    const customers = data.QueryResponse?.Customer || [];
+
+    const today = new Date();
+    const invoiceDate = new Date(today.getFullYear(), today.getMonth(), 20).toISOString().split('T')[0];
+    const dueDate = new Date(today.getFullYear(), today.getMonth() + 1, 1).toISOString().split('T')[0];
+
+    const preview = Object.entries(RESIDENT_RATES).map(([name, amount]) => {
+      const customer = customers.find(c =>
+        c.DisplayName?.toLowerCase() === name.toLowerCase() ||
+        c.FullyQualifiedName?.toLowerCase() === name.toLowerCase()
+      );
+      return { name, customerId: customer?.Id || null, amount, invoiceDate, dueDate };
+    });
+
+    const total = Object.values(RESIDENT_RATES).reduce((a, b) => a + b, 0);
+    res.json({ preview, invoiceDate, dueDate, total });
+  } catch (e) {
+    console.error('Preview invoices error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/qb/create-invoices', async (req, res) => {
+  if (!qbRealmId) return res.status(503).json({ error: 'QuickBooks not connected.' });
+  try {
+    const { preview } = req.body;
+
+    // Find a service item matching room/board/care
+    const itemData = await qbQuery("SELECT * FROM Item WHERE Type = 'Service' MAXRESULTS 50");
+    const items = itemData.QueryResponse?.Item || [];
+    const roomItem = items.find(i => /room|board|care|resident/i.test(i.Name)) || items[0];
+
+    const results = [];
+    for (const r of preview) {
+      if (!r.customerId) {
+        results.push({ name: r.name, status: 'skipped', reason: 'Customer not found in QuickBooks' });
+        continue;
+      }
+      try {
+        const result = await qbCreate('invoice', {
+          Line: [{
+            Amount: r.amount,
+            DetailType: 'SalesItemLineDetail',
+            SalesItemLineDetail: {
+              ItemRef: roomItem
+                ? { value: roomItem.Id, name: roomItem.Name }
+                : { value: '1', name: 'Services' },
+              Qty: 1,
+              UnitPrice: r.amount
+            }
+          }],
+          CustomerRef: { value: r.customerId },
+          TxnDate: r.invoiceDate,
+          DueDate: r.dueDate
+        });
+        results.push({ name: r.name, status: 'created', invoiceId: result.Invoice?.Id, amount: r.amount });
+      } catch (e) {
+        results.push({ name: r.name, status: 'error', reason: e.message });
+      }
+    }
+
+    const created = results.filter(r => r.status === 'created');
+    const total = created.reduce((sum, r) => sum + r.amount, 0);
+    res.json({ results, created: created.length, total });
+  } catch (e) {
+    console.error('Create invoices error:', e);
     res.status(500).json({ error: e.message });
   }
 });

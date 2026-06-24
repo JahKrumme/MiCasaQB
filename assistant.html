@@ -55,6 +55,7 @@
       scroll-behavior: smooth;
     }
 
+    /* --- Chat bubbles --- */
     .bubble {
       max-width: 82%;
       padding: 12px 16px;
@@ -100,6 +101,7 @@
       font-family: 'SF Mono', 'Fira Code', monospace;
     }
 
+    /* --- Typing indicator --- */
     .typing {
       display: flex;
       align-items: center;
@@ -128,6 +130,128 @@
       30% { transform: translateY(-7px); opacity: 0.7; }
     }
 
+    /* --- Invoice preview card --- */
+    .preview-card {
+      align-self: flex-start;
+      width: 100%;
+      max-width: 100%;
+      background: #fff;
+      border: 1.5px solid #e0d0b0;
+      border-radius: 14px;
+      padding: 18px 20px;
+      box-shadow: 0 2px 10px rgba(92,61,30,0.1);
+    }
+
+    .preview-card .preview-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #5C3D1E;
+      margin-bottom: 4px;
+    }
+
+    .preview-card .preview-meta {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 14px;
+    }
+
+    .preview-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    .preview-table th {
+      text-align: left;
+      color: #888;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 6px 10px;
+      border-bottom: 1.5px solid #ede8e1;
+    }
+
+    .preview-table td {
+      padding: 9px 10px;
+      border-bottom: 1px solid #f0ece6;
+      color: #2a1a08;
+    }
+
+    .preview-table tfoot td {
+      border-top: 1.5px solid #ede8e1;
+      border-bottom: none;
+      padding-top: 10px;
+      font-size: 14px;
+    }
+
+    .preview-table td.amount, .preview-table th.amount {
+      text-align: right;
+    }
+
+    .preview-table td.status-found { color: #2d6a2d; font-weight: 600; }
+    .preview-table td.status-missing { color: #9b0000; font-weight: 600; }
+
+    .preview-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 4px;
+      flex-wrap: wrap;
+    }
+
+    .btn-confirm {
+      background: #5C3D1E;
+      color: #C49A2A;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn-confirm:hover { background: #7a5230; }
+    .btn-confirm:disabled { opacity: 0.5; cursor: default; }
+
+    .btn-cancel {
+      background: #ede8e1;
+      color: #555;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn-cancel:hover { background: #ddd8d0; }
+
+    .preview-card .preview-status {
+      font-size: 13px;
+      color: #5C3D1E;
+      padding: 6px 0;
+    }
+
+    .preview-card .preview-success {
+      font-size: 14px;
+      font-weight: 600;
+      color: #2d6a2d;
+      padding: 6px 0;
+    }
+
+    .preview-card .preview-cancelled {
+      font-size: 13px;
+      color: #888;
+      padding: 6px 0;
+      font-style: italic;
+    }
+
+    /* --- Input row --- */
     #input-row {
       background: #fff;
       border-top: 1px solid #e0d6cc;
@@ -156,11 +280,7 @@
     }
 
     #user-input::placeholder { color: #a9998a; }
-
-    #user-input:focus {
-      border-color: #C49A2A;
-      background: #fff;
-    }
+    #user-input:focus { border-color: #C49A2A; background: #fff; }
 
     #send-btn {
       height: 42px;
@@ -284,6 +404,8 @@ const sendBtn = document.getElementById('send-btn');
 
 let history = [];
 
+const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 });
+
 function renderMarkdown(text) {
   return text
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -322,6 +444,106 @@ function removeTyping() {
   if (el) el.remove();
 }
 
+// --- Invoice preview card ---
+
+async function showInvoicePreview() {
+  const card = document.createElement('div');
+  card.className = 'preview-card';
+  card.innerHTML = '<p class="preview-status">Fetching invoice preview from QuickBooks…</p>';
+  messagesEl.appendChild(card);
+  card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+  try {
+    const res = await fetch('/qb/preview-invoices', { method: 'POST' });
+    const data = await res.json();
+
+    if (!res.ok) {
+      card.innerHTML = `<p class="preview-status" style="color:#9b0000">${data.error || 'Could not load preview.'}</p>`;
+      return;
+    }
+
+    const { preview, invoiceDate, dueDate, total } = data;
+
+    const rows = preview.map(r => `
+      <tr>
+        <td>${r.name}</td>
+        <td class="amount">${fmt(r.amount)}</td>
+        <td>${r.dueDate}</td>
+        <td class="${r.customerId ? 'status-found' : 'status-missing'}">${r.customerId ? 'Ready' : 'Not found'}</td>
+      </tr>`).join('');
+
+    card.innerHTML = `
+      <div class="preview-title">Monthly Invoice Preview</div>
+      <div class="preview-meta">Invoice date: <strong>${invoiceDate}</strong> &nbsp;·&nbsp; Due date: <strong>${dueDate}</strong></div>
+      <table class="preview-table">
+        <thead>
+          <tr>
+            <th>Resident</th>
+            <th class="amount">Amount</th>
+            <th>Due Date</th>
+            <th>QB Status</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr>
+            <td><strong>Total</strong></td>
+            <td class="amount"><strong>${fmt(total)}</strong></td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="preview-actions">
+        <button class="btn-confirm">Confirm — Create Invoices</button>
+        <button class="btn-cancel">Cancel</button>
+      </div>`;
+
+    card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+    card.querySelector('.btn-confirm').addEventListener('click', () => confirmCreateInvoices(preview, card));
+    card.querySelector('.btn-cancel').addEventListener('click', () => cancelInvoices(card));
+
+  } catch (e) {
+    card.innerHTML = `<p class="preview-status" style="color:#9b0000">Error: ${e.message}</p>`;
+  }
+}
+
+async function confirmCreateInvoices(preview, card) {
+  const actionsEl = card.querySelector('.preview-actions');
+  actionsEl.innerHTML = '<p class="preview-status">Creating invoices in QuickBooks…</p>';
+
+  try {
+    const res = await fetch('/qb/create-invoices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preview })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      actionsEl.innerHTML = `<p class="preview-status" style="color:#9b0000">${data.error || 'Failed to create invoices.'}</p>`;
+      return;
+    }
+
+    const skipped = data.results.filter(r => r.status === 'skipped' || r.status === 'error');
+    let msg = `✓ ${data.created} invoice${data.created !== 1 ? 's' : ''} created — ${fmt(data.total)} total.`;
+    if (skipped.length) msg += ` ${skipped.length} skipped (customer not found in QB).`;
+
+    actionsEl.innerHTML = `<div class="preview-success">${msg}</div>`;
+    history.push({ role: 'assistant', content: msg });
+
+  } catch (e) {
+    actionsEl.innerHTML = `<p class="preview-status" style="color:#9b0000">Error: ${e.message}</p>`;
+  }
+}
+
+function cancelInvoices(card) {
+  card.querySelector('.preview-actions').innerHTML = '<p class="preview-cancelled">Invoice creation cancelled.</p>';
+  history.push({ role: 'assistant', content: 'Invoice creation cancelled.' });
+}
+
+// --- Main send flow ---
+
 async function sendMessage() {
   const text = inputEl.value.trim();
   if (!text) return;
@@ -353,6 +575,10 @@ async function sendMessage() {
       const reply = data?.text || '(No response)';
       history.push({ role: 'assistant', content: reply });
       addBubble('assistant', reply);
+
+      if (data.intent === 'create-invoices') {
+        showInvoicePreview();
+      }
     }
   } catch (e) {
     removeTyping();

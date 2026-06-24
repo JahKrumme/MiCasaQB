@@ -4,7 +4,6 @@ if (process.env.NODE_ENV !== 'production') {
 const express = require('express');
 const OAuthClient = require('intuit-oauth');
 const { google } = require('googleapis');
-const cron = require('node-cron');
 
 const app = express();
 
@@ -467,23 +466,6 @@ app.get('/run-monthly-invoices', async (req, res) => {
   }
 });
 
-// Daily 8 AM check — only sends overdue emails between the 6th and 15th
-cron.schedule('0 8 * * *', () => {
-  const day = new Date().getDate();
-  if (day < 6 || day > 15) {
-    console.log('Outside overdue reminder window');
-    return;
-  }
-  console.log('Running daily overdue invoice check...');
-  runOverdueCheck().catch(e => console.error('Cron job error:', e));
-  run30DayAlert().catch(e => console.error('30-day cron error:', e));
-});
-
-// 20th of every month at 8 AM — sends next month's invoice notice
-cron.schedule('0 8 20 * *', () => {
-  console.log('Running monthly invoice notice...');
-  runMonthlyInvoices().catch(e => console.error('Monthly cron error:', e));
-});
 
 async function runKanCareReminder() {
   const now = new Date();
@@ -571,16 +553,11 @@ app.get('/privacy', (req, res) => {
 </html>`);
 });
 
-// 25th of every month at 8 AM
-cron.schedule('0 8 25 * *', () => {
-  console.log('Running KanCare billing reminder...');
-  runKanCareReminder().catch(e => console.error('KanCare cron error:', e));
-});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   const base = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
   console.log(`Server running at ${base}`);
   console.log(`QuickBooks connect: ${base}/connect`);
-  console.log('Daily cron: 8:00 AM (6th-15th only) | Invoice notice: 20th | KanCare: 25th');
+  console.log('Scheduled jobs handled by GitHub Actions');
 });

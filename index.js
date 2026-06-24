@@ -83,13 +83,19 @@ async function sendEmail(to, subject, html) {
 }
 
 async function saveTokensToSupabase(accessToken, refreshToken, realmId) {
-  const { error } = await supabase
-    .from('qb_tokens')
-    .upsert({ id: 1, access_token: accessToken, refresh_token: refreshToken, realm_id: realmId });
-  if (error) {
-    console.error('Failed to save tokens to Supabase:', error.message);
-  } else {
-    console.log('QB tokens saved to Supabase');
+  try {
+    console.log('Saving tokens to Supabase, realmId:', realmId);
+    const { data, error } = await supabase
+      .from('qb_tokens')
+      .upsert({ id: 1, access_token: accessToken, refresh_token: refreshToken, realm_id: realmId })
+      .select();
+    if (error) {
+      console.error('Supabase save error:', JSON.stringify(error));
+    } else {
+      console.log('Tokens saved to Supabase successfully:', data);
+    }
+  } catch (e) {
+    console.error('Supabase save exception:', e.message);
   }
 }
 

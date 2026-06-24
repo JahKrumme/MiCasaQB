@@ -1,0 +1,15 @@
+name: KanCare Billing Reminder
+
+on:
+  schedule:
+    - cron: '0 13 25 * *'  # 8AM CST on the 25th
+  workflow_dispatch:
+
+jobs:
+  run-kancare-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake up Render and send KanCare reminder
+        run: |
+          sleep 60
+          curl -f https://micasaqb.onrender.com/run-kancare-reminder

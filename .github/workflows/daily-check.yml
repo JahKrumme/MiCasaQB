@@ -1,0 +1,15 @@
+name: Daily Overdue Check
+
+on:
+  schedule:
+    - cron: '0 13 * * *'  # 8AM CST daily
+  workflow_dispatch:
+
+jobs:
+  run-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake up Render and run overdue check
+        run: |
+          sleep 60
+          curl -f https://micasaqb.onrender.com/run-check

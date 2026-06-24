@@ -39,8 +39,7 @@ let qbRealmId = null;
     if (tokens) {
       qbRealmId = tokens.realm_id;
       oauthClient.setToken({ refresh_token: tokens.refresh_token });
-      await oauthClient.refresh();
-      console.log('QB token refreshed from env vars');
+      console.log('QB refresh token loaded from Supabase — will refresh on first request');
     }
   } catch (e) {
     console.error('Startup QB token load failed:', e.message);
@@ -148,17 +147,15 @@ async function ensureQBToken(req, res, next) {
   if (!qbRealmId) {
     return res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });
   }
-  if (!oauthClient.isAccessTokenValid()) {
-    try {
-      await oauthClient.refresh();
-      const token = oauthClient.getToken();
-      console.log('QB token refreshed from env vars');
-      saveTokensToSupabase(token.access_token, token.refresh_token, qbRealmId)
-        .catch(e => console.error('Supabase token save error:', e));
-    } catch (e) {
-      console.error('QB token refresh failed:', e.message);
-      return res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });
-    }
+  try {
+    await oauthClient.refresh();
+    const token = oauthClient.getToken();
+    console.log('QB token refreshed');
+    saveTokensToSupabase(token.access_token, token.refresh_token, qbRealmId)
+      .catch(e => console.error('Supabase token save error:', e));
+  } catch (e) {
+    console.error('QB token refresh failed:', e.message);
+    return res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });
   }
   next();
 }

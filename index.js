@@ -6,6 +6,7 @@ const OAuthClient = require('intuit-oauth');
 const { google } = require('googleapis');
 
 const app = express();
+app.use(express.json());
 
 // QuickBooks OAuth
 const oauthClient = new OAuthClient({
@@ -558,6 +559,33 @@ app.get('/privacy', (req, res) => {
 </html>`);
 });
 
+
+app.get('/assistant', (req, res) => {
+  res.sendFile(__dirname + '/assistant.html');
+});
+
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { messages, system } = req.body;
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1024, system, messages })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json(data);
+    }
+    res.json(data);
+  } catch (e) {
+    console.error('Chat proxy error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

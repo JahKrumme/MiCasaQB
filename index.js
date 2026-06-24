@@ -92,7 +92,16 @@ let qbRealmId = null;
   }
 })();
 
-const RECIPIENTS = 'elijahkrumme@gmail.com, micasacarehomes@gmail.com, micasatyler@gmail.com, bom@wvmsks.com, office@wvmsks.com';
+async function getRecipients() {
+  try {
+    const { data, error } = await supabase.from('allowed_emails').select('email');
+    if (error || !data || data.length === 0) throw new Error('empty');
+    return data.map(row => row.email).join(', ');
+  } catch (e) {
+    console.error('Failed to load recipients from Supabase, using fallback:', e.message);
+    return 'elijahkrumme@gmail.com';
+  }
+}
 
 // --- helpers ---
 
@@ -702,7 +711,7 @@ app.get('/send-test', async (req, res) => {
         <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
         <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
       </div>`;
-    await sendEmail(RECIPIENTS, 'Test Email from QuikBooks App', html);
+    await sendEmail(await getRecipients(), 'Test Email from QuikBooks App', html);
     res.send('Test email sent to elijahkrumme@gmail.com');
   } catch (e) {
     console.error('Send-test error:', e);
@@ -774,7 +783,7 @@ async function runOverdueCheck() {
       <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
     </div>`;
 
-  await sendEmail(RECIPIENTS, `Overdue Invoices — ${invoices.length} unpaid ($${totalBalance.toFixed(2)})`, html);
+  await sendEmail(await getRecipients(), `Overdue Invoices — ${invoices.length} unpaid ($${totalBalance.toFixed(2)})`, html);
   console.log('Daily overdue check complete');
   return { status: 'ok', count: invoices.length, total: totalBalance };
 }
@@ -884,7 +893,7 @@ async function run30DayAlert() {
       <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
     </div>`;
 
-  await sendEmail(RECIPIENTS, 'Action Required: Invoices 30+ Days Overdue', html);
+  await sendEmail(await getRecipients(), 'Action Required: Invoices 30+ Days Overdue', html);
   return { status: 'ok', count: invoices.length, total: totalBalance };
 }
 
@@ -982,7 +991,7 @@ async function runMonthlyInvoices() {
       <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
     </div>`;
 
-  await sendEmail(RECIPIENTS, `Mi Casa — Your Invoice for ${nextMonthLabel} is Ready`, html);
+  await sendEmail(await getRecipients(), `Mi Casa — Your Invoice for ${nextMonthLabel} is Ready`, html);
   console.log(`Monthly invoice notice sent for ${nextMonthLabel}`);
   return { status: 'ok', count: invoices.length, total: totalAmt };
 }
@@ -1034,7 +1043,7 @@ async function runKanCareReminder() {
       <p style="color:#999;font-size:12px">Sent from your QuikBooks integration</p>
     </div>`;
 
-  await sendEmail(RECIPIENTS, 'KanCare Billing Deadline Reminder', html);
+  await sendEmail(await getRecipients(), 'KanCare Billing Deadline Reminder', html);
   console.log(`KanCare reminder sent for ${monthLabel}`);
 }
 

@@ -633,10 +633,12 @@ app.post('/api/chat', async (req, res) => {
 
     // Inject live QB customer list and rates into system prompt
     let customerNames = [];
+    let customerRates = {};
     let customerSection;
     try {
       const [names, rates] = await Promise.all([getActiveCustomers(), getResidentRates()]);
       customerNames = names;
+      customerRates = rates;
       const lines = names.map(name => {
         const rate = rates[name];
         return rate
@@ -682,7 +684,8 @@ app.post('/api/chat', async (req, res) => {
       const extractedName = customerNames.find(name =>
         userMsgLower.includes(name.toLowerCase())
       ) || null;
-      paymentData = { customerName: extractedName, amount: extractedAmount };
+      const rateAmount = extractedName ? (customerRates[extractedName] || null) : null;
+      paymentData = { customerName: extractedName, amount: extractedAmount || rateAmount };
     }
 
     res.json({ text, intent, paymentData });

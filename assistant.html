@@ -261,6 +261,40 @@
       font-style: italic;
     }
 
+    /* --- Payment form --- */
+    .payment-form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .payment-form label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    .payment-form input {
+      border: 1.5px solid #d6c9bc;
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      color: #2a1a08;
+      background: #faf7f4;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .payment-form input:focus {
+      border-color: #C49A2A;
+      background: #fff;
+    }
+
     /* --- Input row --- */
     #input-row {
       background: #fff;
@@ -566,6 +600,128 @@ function cancelInvoices(card) {
   history.push({ role: 'assistant', content: 'Invoice creation cancelled.' });
 }
 
+// --- Payment card ---
+
+async function showPaymentCard(paymentData) {
+  const card = document.createElement('div');
+  card.className = 'preview-card';
+  messagesEl.appendChild(card);
+  card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+  if (paymentData?.customerName && paymentData?.amount) {
+    await lookupPaymentInvoice(card, paymentData.customerName, paymentData.amount);
+  } else {
+    renderPaymentForm(card, paymentData?.customerName || '', paymentData?.amount || '');
+  }
+}
+
+function renderPaymentForm(card, prefillName, prefillAmount) {
+  card.innerHTML = `
+    <div class="preview-title">Record a Payment</div>
+    <div class="payment-form">
+      <label>Customer Name</label>
+      <input type="text" class="payment-name-input" value="${prefillName}" placeholder="e.g. Beverly Herrell">
+      <label>Payment Amount ($)</label>
+      <input type="number" class="payment-amount-input" value="${prefillAmount || ''}" placeholder="e.g. 5885">
+    </div>
+    <div class="preview-actions">
+      <button class="btn-confirm">Find Invoice</button>
+      <button class="btn-cancel">Cancel</button>
+    </div>`;
+
+  card.querySelector('.btn-confirm').addEventListener('click', async () => {
+    const name = card.querySelector('.payment-name-input').value.trim();
+    const amount = parseFloat(card.querySelector('.payment-amount-input').value) || null;
+    if (!name) return;
+    await lookupPaymentInvoice(card, name, amount);
+  });
+
+  card.querySelector('.btn-cancel').addEventListener('click', () => cancelPayment(card));
+}
+
+async function lookupPaymentInvoice(card, customerName, amount) {
+  card.innerHTML = `<p class="preview-status">Looking up open invoice for ${customerName}…</p>`;
+
+  try {
+    const res = await fetch('/qb/preview-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerName, amount })
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.found) {
+      const msg = data.message || `No open invoice found for ${customerName}.`;
+      card.innerHTML = `<p class="preview-status" style="color:#9b0000">${msg}</p>`;
+      history.push({ role: 'assistant', content: msg });
+      return;
+    }
+
+    renderPaymentPreview(card, data);
+  } catch (e) {
+    card.innerHTML = `<p class="preview-status" style="color:#9b0000">Error: ${e.message}</p>`;
+  }
+}
+
+function renderPaymentPreview(card, data) {
+  card.innerHTML = `
+    <div class="preview-title">Payment Preview</div>
+    <div class="preview-meta">Review before recording in QuickBooks</div>
+    <table class="preview-table">
+      <tbody>
+        <tr><td>Customer</td><td><strong>${data.customerName}</strong></td></tr>
+        <tr><td>Invoice #</td><td>#${data.invoiceNumber}</td></tr>
+        <tr><td>Invoice Balance</td><td>${fmt(data.invoiceBalance)}</td></tr>
+        <tr><td>Payment Amount</td><td><strong style="color:#2d6a2d">${fmt(data.paymentAmount)}</strong></td></tr>
+        <tr><td>Payment Date</td><td>${data.paymentDate}</td></tr>
+      </tbody>
+    </table>
+    <div class="preview-actions">
+      <button class="btn-confirm">Confirm — Record Payment</button>
+      <button class="btn-cancel">Cancel</button>
+    </div>`;
+
+  card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  card.querySelector('.btn-confirm').addEventListener('click', () => confirmRecordPayment(data, card));
+  card.querySelector('.btn-cancel').addEventListener('click', () => cancelPayment(card));
+}
+
+async function confirmRecordPayment(data, card) {
+  card.querySelector('.preview-actions').innerHTML = '<p class="preview-status">Recording payment in QuickBooks…</p>';
+
+  try {
+    const res = await fetch('/qb/record-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId: data.customerId,
+        invoiceId: data.invoiceId,
+        paymentAmount: data.paymentAmount,
+        paymentDate: data.paymentDate
+      })
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      card.querySelector('.preview-actions').innerHTML =
+        `<p class="preview-status" style="color:#9b0000">${result.error || 'Failed to record payment.'}</p>`;
+      return;
+    }
+
+    const msg = `✓ Payment of ${fmt(data.paymentAmount)} recorded for ${data.customerName} (Invoice #${data.invoiceNumber})`;
+    card.querySelector('.preview-actions').innerHTML = `<div class="preview-success">${msg}</div>`;
+    history.push({ role: 'assistant', content: msg });
+  } catch (e) {
+    card.querySelector('.preview-actions').innerHTML =
+      `<p class="preview-status" style="color:#9b0000">Error: ${e.message}</p>`;
+  }
+}
+
+function cancelPayment(card) {
+  card.querySelector('.preview-actions').innerHTML = '<p class="preview-cancelled">Payment recording cancelled.</p>';
+  history.push({ role: 'assistant', content: 'Payment recording cancelled.' });
+}
+
 // --- Main send flow ---
 
 async function sendMessage() {
@@ -602,6 +758,8 @@ async function sendMessage() {
 
       if (data.intent === 'create-invoices') {
         showInvoicePreview();
+      } else if (data.intent === 'record-payment') {
+        showPaymentCard(data.paymentData);
       }
     }
   } catch (e) {

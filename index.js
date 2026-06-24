@@ -632,9 +632,11 @@ app.post('/api/chat', async (req, res) => {
     const { messages, system } = req.body;
 
     // Inject live QB customer list and rates into system prompt
+    let customerNames = [];
     let customerSection;
     try {
       const [names, rates] = await Promise.all([getActiveCustomers(), getResidentRates()]);
+      customerNames = names;
       const lines = names.map(name => {
         const rate = rates[name];
         return rate
@@ -661,11 +663,29 @@ app.post('/api/chat', async (req, res) => {
 
     const text = completion.choices[0].message.content;
 
-    const INVOICE_KEYWORDS = ['create invoice', 'create invoices', 'make invoice', 'invoices for', 'bill residents', 'monthly invoices'];
-    const userMsg = (messages[messages.length - 1]?.content || '').toLowerCase();
-    const intent = INVOICE_KEYWORDS.some(kw => userMsg.includes(kw)) ? 'create-invoices' : null;
+    const userContent = messages[messages.length - 1]?.content || '';
+    const userMsgLower = userContent.toLowerCase();
 
-    res.json({ text, intent });
+    const INVOICE_KEYWORDS = ['create invoice', 'create invoices', 'make invoice', 'invoices for', 'bill residents', 'monthly invoices'];
+    const PAYMENT_KEYWORDS = ['record payment', 'received payment', 'payment from', 'log payment'];
+
+    let intent = null;
+    let paymentData = null;
+
+    if (INVOICE_KEYWORDS.some(kw => userMsgLower.includes(kw))) {
+      intent = 'create-invoices';
+    } else if (PAYMENT_KEYWORDS.some(kw => userMsgLower.includes(kw)) ||
+               (userMsgLower.includes('paid') && !userMsgLower.includes('unpaid') && !userMsgLower.includes('not paid'))) {
+      intent = 'record-payment';
+      const amountMatch = userContent.match(/\$?([\d,]+(?:\.\d{2})?)/);
+      const extractedAmount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : null;
+      const extractedName = customerNames.find(name =>
+        userMsgLower.includes(name.toLowerCase())
+      ) || null;
+      paymentData = { customerName: extractedName, amount: extractedAmount };
+    }
+
+    res.json({ text, intent, paymentData });
   } catch (e) {
     console.error('Chat proxy error:', e);
     res.status(500).json({ error: e.message });
@@ -764,6 +784,71 @@ app.post('/qb/create-invoices', async (req, res) => {
     res.json({ results, created: created.length, total });
   } catch (e) {
     console.error('Create invoices error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/qb/preview-payment', async (req, res) => {
+  try {
+    const { customerName, amount } = req.body;
+
+    const custData = await qbQuery('SELECT * FROM Customer WHERE Active = true MAXRESULTS 100');
+    const customers = custData.QueryResponse?.Customer || [];
+    const customer = customers.find(c => {
+      const name = (c.DisplayName || c.FullyQualifiedName || '').toLowerCase();
+      return name.includes(customerName.toLowerCase()) || customerName.toLowerCase().includes(name);
+    });
+
+    if (!customer) {
+      return res.json({ found: false, message: `No customer found matching "${customerName}"` });
+    }
+
+    const invData = await qbQuery(
+      `SELECT * FROM Invoice WHERE CustomerRef = '${customer.Id}' AND Balance > '0' ORDER BY TxnDate DESC MAXRESULTS 1`
+    );
+    const invoices = invData.QueryResponse?.Invoice || [];
+
+    if (invoices.length === 0) {
+      return res.json({ found: false, message: `No open invoice found for ${customer.DisplayName}` });
+    }
+
+    const invoice = invoices[0];
+    const today = new Date().toISOString().split('T')[0];
+
+    res.json({
+      found: true,
+      customerId: customer.Id,
+      customerName: customer.DisplayName,
+      invoiceId: invoice.Id,
+      invoiceNumber: invoice.DocNumber,
+      invoiceAmount: Number(invoice.TotalAmt),
+      invoiceBalance: Number(invoice.Balance),
+      paymentAmount: amount || Number(invoice.Balance),
+      paymentDate: today
+    });
+  } catch (e) {
+    console.error('Preview payment error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/qb/record-payment', async (req, res) => {
+  try {
+    const { customerId, invoiceId, paymentAmount, paymentDate } = req.body;
+
+    const result = await qbCreate('payment', {
+      CustomerRef: { value: customerId },
+      TotalAmt: paymentAmount,
+      TxnDate: paymentDate,
+      Line: [{
+        Amount: paymentAmount,
+        LinkedTxn: [{ TxnId: invoiceId, TxnType: 'Invoice' }]
+      }]
+    });
+
+    res.json({ success: true, paymentId: result.Payment?.Id, amount: paymentAmount });
+  } catch (e) {
+    console.error('Record payment error:', e);
     res.status(500).json({ error: e.message });
   }
 });

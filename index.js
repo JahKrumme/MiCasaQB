@@ -1119,7 +1119,10 @@ app.post('/api/chat', requireLoginApi, async (req, res) => {
   try {
     const { messages, system } = req.body;
 
-    // Inject live QB customer list and rates into system prompt
+    const userContent = messages[messages.length - 1]?.content || '';
+    const userMsgLower = userContent.toLowerCase();
+
+    // Fetch QB customer data (needed for intent detection and system prompt)
     let customerNames = [];
     let customerRates = {};
     let customerSection;
@@ -1138,33 +1141,20 @@ app.post('/api/chat', requireLoginApi, async (req, res) => {
       customerSection = '## Active Residents\nCustomer list unavailable — QB token may need refresh.';
     }
 
-    const augmentedSystem = system + '\n\n' + customerSection;
-
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
-    const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: augmentedSystem },
-        ...messages
-      ],
-      max_tokens: 1024
-    });
-
-    const text = completion.choices[0].message.content;
-
-    const userContent = messages[messages.length - 1]?.content || '';
-    const userMsgLower = userContent.toLowerCase();
-
+    // Intent detection — runs before Groq so we can short-circuit
+    const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
     const INVOICE_KEYWORDS = ['create invoice', 'create invoices', 'make invoice', 'invoices for', 'bill residents', 'monthly invoices'];
     const PAYMENT_KEYWORDS = ['record payment', 'received payment', 'payment from', 'log payment'];
     const RESIDENT_KEYWORDS = ['add resident', 'new resident', 'add client', 'new client', 'move in', 'add patient', 'new patient'];
     const OVERDUE_KEYWORDS = ['overdue', 'unpaid', 'who owes', 'outstanding balance', 'past due', 'show overdue'];
 
+    const hasInvoiceWord = userMsgLower.includes('invoice') || userMsgLower.includes('invoices');
+    const hasMonth = MONTHS.some(m => userMsgLower.includes(m));
+
     let intent = null;
     let paymentData = null;
 
-    if (INVOICE_KEYWORDS.some(kw => userMsgLower.includes(kw))) {
+    if (INVOICE_KEYWORDS.some(kw => userMsgLower.includes(kw)) || (hasInvoiceWord && hasMonth)) {
       intent = 'create-invoices';
     } else if (PAYMENT_KEYWORDS.some(kw => userMsgLower.includes(kw)) ||
                (userMsgLower.includes('paid') && !userMsgLower.includes('unpaid') && !userMsgLower.includes('not paid'))) {
@@ -1182,7 +1172,25 @@ app.post('/api/chat', requireLoginApi, async (req, res) => {
       intent = 'overdue-summary';
     }
 
-    res.json({ text, intent, paymentData });
+    // When automation is available, skip the AI call — the card replaces the response
+    if (intent) {
+      return res.json({ text: null, intent, paymentData });
+    }
+
+    // No automation match — call Groq for a conversational response
+    const augmentedSystem = system + '\n\n' + customerSection;
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: augmentedSystem },
+        ...messages
+      ],
+      max_tokens: 1024
+    });
+
+    const text = completion.choices[0].message.content;
+    res.json({ text, intent: null, paymentData: null });
   } catch (e) {
     console.error('Chat proxy error:', e);
     res.status(500).json({ error: e.message });

@@ -1031,20 +1031,18 @@ async function sendMessage() {
       const errMsg = data?.error?.message || data?.error || 'Something went wrong. Please try again.';
       addBubble('error', errMsg);
       history.pop();
+    } else if (data.intent === 'create-invoices') {
+      showInvoicePreview();
+    } else if (data.intent === 'record-payment') {
+      showPaymentCard(data.paymentData);
+    } else if (data.intent === 'add-resident') {
+      showNewResidentCard();
+    } else if (data.intent === 'overdue-summary') {
+      showOverdueSummary();
     } else {
       const reply = data?.text || '(No response)';
       history.push({ role: 'assistant', content: reply });
       addBubble('assistant', reply);
-
-      if (data.intent === 'create-invoices') {
-        showInvoicePreview();
-      } else if (data.intent === 'record-payment') {
-        showPaymentCard(data.paymentData);
-      } else if (data.intent === 'add-resident') {
-        showNewResidentCard();
-      } else if (data.intent === 'overdue-summary') {
-        showOverdueSummary();
-      }
     }
   } catch (e) {
     removeTyping();

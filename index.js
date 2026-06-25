@@ -220,8 +220,8 @@ async function ensureQBToken(req, res, next) {
     await oauthClient.refresh();
     const token = oauthClient.getToken();
     console.log('QB token refreshed');
-    saveTokensToSupabase(token.access_token, token.refresh_token, qbRealmId)
-      .catch(e => console.error('Supabase token save error:', e));
+    await saveTokensToSupabase(token.access_token, token.refresh_token, qbRealmId);
+    console.log('New refresh token saved to Supabase after refresh');
   } catch (e) {
     console.error('QB token refresh failed:', e.message);
     return res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });

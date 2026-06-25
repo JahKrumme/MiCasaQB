@@ -1144,7 +1144,7 @@ app.post('/api/chat', requireLoginApi, async (req, res) => {
     // Intent detection — runs before Groq so we can short-circuit
     const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
     const INVOICE_KEYWORDS = ['create invoice', 'make invoice', 'invoices for', 'monthly invoices', 'bill residents'];
-    const PAYMENT_KEYWORDS = ['record payment', 'received payment', 'payment from', 'log payment'];
+    const PAYMENT_KEYWORDS = ['record payment', 'record a payment', 'received payment', 'payment from', 'payment for', 'log payment'];
     const RESIDENT_KEYWORDS = ['add resident', 'new resident', 'add client', 'move in'];
     const OVERDUE_KEYWORDS = ['overdue', 'unpaid', 'who owes', 'outstanding'];
 

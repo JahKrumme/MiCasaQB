@@ -1143,21 +1143,21 @@ app.post('/api/chat', requireLoginApi, async (req, res) => {
 
     // Intent detection — runs before Groq so we can short-circuit
     const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
-    const INVOICE_KEYWORDS = ['create invoice', 'create invoices', 'make invoice', 'invoices for', 'bill residents', 'monthly invoices'];
+    const INVOICE_KEYWORDS = ['create invoice', 'make invoice', 'invoices for', 'monthly invoices', 'bill residents'];
     const PAYMENT_KEYWORDS = ['record payment', 'received payment', 'payment from', 'log payment'];
-    const RESIDENT_KEYWORDS = ['add resident', 'new resident', 'add client', 'new client', 'move in', 'add patient', 'new patient'];
-    const OVERDUE_KEYWORDS = ['overdue', 'unpaid', 'who owes', 'outstanding balance', 'past due', 'show overdue'];
+    const RESIDENT_KEYWORDS = ['add resident', 'new resident', 'add client', 'move in'];
+    const OVERDUE_KEYWORDS = ['overdue', 'unpaid', 'who owes', 'outstanding'];
 
     const hasInvoiceWord = userMsgLower.includes('invoice') || userMsgLower.includes('invoices');
     const hasMonth = MONTHS.some(m => userMsgLower.includes(m));
+    const hasPaid = userMsgLower.includes('paid') && !userMsgLower.includes('unpaid');
 
     let intent = null;
     let paymentData = null;
 
     if (INVOICE_KEYWORDS.some(kw => userMsgLower.includes(kw)) || (hasInvoiceWord && hasMonth)) {
       intent = 'create-invoices';
-    } else if (PAYMENT_KEYWORDS.some(kw => userMsgLower.includes(kw)) ||
-               (userMsgLower.includes('paid') && !userMsgLower.includes('unpaid') && !userMsgLower.includes('not paid'))) {
+    } else if (PAYMENT_KEYWORDS.some(kw => userMsgLower.includes(kw)) || hasPaid) {
       intent = 'record-payment';
       const amountMatch = userContent.match(/\$?([\d,]+(?:\.\d{2})?)/);
       const extractedAmount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : null;

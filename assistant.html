@@ -64,6 +64,22 @@
 
     #header-actions a:hover { color: #C49A2A; }
 
+    #reconnect-btn {
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      color: #C49A2A;
+      background: transparent;
+      border: 1.5px solid #C49A2A;
+      border-radius: 12px;
+      padding: 3px 10px;
+      cursor: pointer;
+      text-decoration: none;
+      line-height: 1.6;
+    }
+
+    #reconnect-btn:hover { background: rgba(196,154,42,0.12); }
+
     #messages {
       flex: 1;
       overflow-y: auto;
@@ -419,6 +435,7 @@
     <h1>Casa QuickBooks Companion</h1>
     <p>Powered by Mi Casa Care Homes</p>
     <div id="header-actions">
+      <a href="/connect" id="reconnect-btn">Reconnect QB</a>
       <a href="/admin">Admin</a>
       <a href="/auth/logout">Sign out</a>
     </div>

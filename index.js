@@ -1057,6 +1057,21 @@ app.get('/run-kancare-reminder', async (req, res) => {
   }
 });
 
+app.get('/keep-alive', async (req, res) => {
+  try {
+    console.log('Keep-alive: Refreshing QB token...');
+    if (!qbRealmId) throw new Error('QB not connected — no realmId');
+    await oauthClient.refresh();
+    const token = oauthClient.getToken();
+    await saveTokensToSupabase(token.access_token, token.refresh_token, qbRealmId);
+    console.log('Keep-alive: Token refreshed and saved to Supabase successfully');
+    res.status(200).json({ status: 'ok', message: 'QB token refreshed successfully' });
+  } catch (e) {
+    console.error('Keep-alive: Token refresh failed:', e.message);
+    res.status(503).json({ status: 'error', message: 'Token refresh failed', error: e.message });
+  }
+});
+
 app.get('/disconnect', (req, res) => {
   qbRealmId = null;
   res.send(`<!DOCTYPE html>

@@ -11,5 +11,16 @@ jobs:
     steps:
       - name: Wake up Render and run overdue check
         run: |
-          sleep 90
-          curl --fail-with-body https://micasaqb.onrender.com/run-check
+          for i in {1..5}; do
+            echo "Attempt $i of 5..."
+            if curl --fail-with-body -v https://micasaqb.onrender.com/run-check; then
+              echo "✓ Overdue check triggered successfully"
+              exit 0
+            fi
+            if [ $i -lt 5 ]; then
+              echo "✗ Request failed, waiting 30 seconds before retry..."
+              sleep 30
+            fi
+          done
+          echo "✗ Failed after 5 attempts"
+          exit 1

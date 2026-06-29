@@ -1060,11 +1060,22 @@ app.get('/run-kancare-reminder', async (req, res) => {
 app.get('/keep-alive', async (req, res) => {
   try {
     console.log('Keep-alive: Refreshing QB token...');
-    if (!qbRealmId) throw new Error('QB not connected — no realmId');
-    await oauthClient.refresh();
-    const token = oauthClient.getToken();
-    await saveTokensToSupabase(token.access_token, token.refresh_token, qbRealmId);
-    console.log('Keep-alive: Token refreshed and saved to Supabase successfully');
+
+    const { data } = await supabase.from('qb_tokens').select('*').eq('id', 1).single();
+    if (!data) throw new Error('No token record found in Supabase');
+
+    qbRealmId = data.realm_id;
+    oauthClient.setToken({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      realmId: data.realm_id
+    });
+
+    const authResponse = await oauthClient.refresh();
+    const tokenJson = authResponse.getJson();
+    await saveTokensToSupabase(tokenJson.access_token, tokenJson.refresh_token, data.realm_id);
+
+    console.log('Keep-alive: Token refreshed successfully');
     res.status(200).json({ status: 'ok', message: 'QB token refreshed successfully' });
   } catch (e) {
     console.error('Keep-alive: Token refresh failed:', e.message);

@@ -212,25 +212,40 @@ function requireLoginApi(req, res, next) {
   res.status(401).json({ error: 'Session expired. Please sign in again.' });
 }
 
-async function ensureQBToken(req, res, next) {
-  if (!qbRealmId) {
-    return res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });
-  }
-  try {
-    await oauthClient.refresh();
-    const token = oauthClient.getToken();
-    console.log('QB token refreshed');
-    await saveTokensToSupabase(token.access_token, token.refresh_token, qbRealmId);
-    console.log('New refresh token saved to Supabase after refresh');
-  } catch (e) {
-    console.error('QB token refresh failed:', e.message);
-    return res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });
-  }
-  next();
+async function ensureQBToken() {
+  const { data, error } = await supabase
+    .from('qb_tokens')
+    .select('*')
+    .eq('id', 1)
+    .single();
+
+  if (error || !data) throw new Error('No token record found in Supabase');
+
+  qbRealmId = data.realm_id;
+  oauthClient.setToken({
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    realmId: data.realm_id
+  });
+
+  const authResponse = await oauthClient.refresh();
+  const tokenJson = authResponse.getJson();
+  await saveTokensToSupabase(tokenJson.access_token, tokenJson.refresh_token, data.realm_id);
+  console.log('QB token refreshed and saved to Supabase');
 }
 
-app.use('/qb', requireLoginApi, ensureQBToken);
-app.use(['/run-check', '/run-30-day-alert', '/run-monthly-invoices', '/overdue-invoices', '/30-day-alert', '/monthly-invoices'], ensureQBToken);
+async function ensureQBTokenMiddleware(req, res, next) {
+  try {
+    await ensureQBToken();
+    next();
+  } catch (e) {
+    console.error('QB token refresh failed:', e.message);
+    res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });
+  }
+}
+
+app.use('/qb', requireLoginApi, ensureQBTokenMiddleware);
+app.use(['/run-check', '/run-30-day-alert', '/run-monthly-invoices', '/overdue-invoices', '/30-day-alert', '/monthly-invoices'], ensureQBTokenMiddleware);
 
 // --- Auth routes ---
 
@@ -1060,21 +1075,7 @@ app.get('/run-kancare-reminder', async (req, res) => {
 app.get('/keep-alive', async (req, res) => {
   try {
     console.log('Keep-alive: Refreshing QB token...');
-
-    const { data } = await supabase.from('qb_tokens').select('*').eq('id', 1).single();
-    if (!data) throw new Error('No token record found in Supabase');
-
-    qbRealmId = data.realm_id;
-    oauthClient.setToken({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      realmId: data.realm_id
-    });
-
-    const authResponse = await oauthClient.refresh();
-    const tokenJson = authResponse.getJson();
-    await saveTokensToSupabase(tokenJson.access_token, tokenJson.refresh_token, data.realm_id);
-
+    await ensureQBToken();
     console.log('Keep-alive: Token refreshed successfully');
     res.status(200).json({ status: 'ok', message: 'QB token refreshed successfully' });
   } catch (e) {

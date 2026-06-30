@@ -85,7 +85,7 @@ let qbRealmId = null;
     if (tokens) {
       qbRealmId = tokens.realm_id;
       oauthClient.setToken({ refresh_token: tokens.refresh_token });
-      console.log('QB refresh token loaded from Supabase — will refresh on first request');
+      console.log('[STARTUP LOAD] Token from Supabase starting:', tokens.refresh_token?.substring(0, 15));
     }
   } catch (e) {
     console.error('Startup QB token load failed:', e.message);
@@ -127,19 +127,21 @@ async function sendEmail(to, subject, html) {
 }
 
 async function saveTokensToSupabase(accessToken, refreshToken, realmId) {
+  console.log('[SUPABASE SAVE] Attempting to save token starting:', refreshToken?.substring(0, 15));
   try {
-    console.log('Saving tokens to Supabase, realmId:', realmId);
     const { data, error } = await supabase
       .from('qb_tokens')
       .upsert({ id: 1, access_token: accessToken, refresh_token: refreshToken, realm_id: realmId })
       .select();
     if (error) {
-      console.error('Supabase save error:', JSON.stringify(error));
+      console.error('[SUPABASE SAVE ERROR]', JSON.stringify(error));
     } else {
-      console.log('Tokens saved to Supabase successfully:', data);
+      console.log('[SUPABASE SAVE RESULT]', JSON.stringify(data));
     }
+    return { data, error };
   } catch (e) {
-    console.error('Supabase save exception:', e.message);
+    console.error('[SUPABASE SAVE EXCEPTION]', e.stack || e.message);
+    throw e;
   }
 }
 
@@ -228,13 +230,16 @@ async function ensureQBToken() {
     realmId: data.realm_id
   });
 
+  console.log('[QB REFRESH] Attempting refresh with token starting:', data.refresh_token?.substring(0, 15));
   const authResponse = await oauthClient.refresh();
   const tokenJson = authResponse.getJson();
+  console.log('[QB REFRESH SUCCESS] New token starting:', tokenJson.refresh_token?.substring(0, 15));
+
   await saveTokensToSupabase(tokenJson.access_token, tokenJson.refresh_token, data.realm_id);
-  console.log('QB token refreshed and saved to Supabase');
 }
 
 async function ensureQBTokenMiddleware(req, res, next) {
+  console.log('[QB MIDDLEWARE] Request to', req.path, 'at', new Date().toISOString());
   try {
     await ensureQBToken();
     next();

@@ -7,13 +7,58 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* --- Mi Casa theme (default) --- */
+    #app {
+      --hdr-bg: #5C3D1E;
+      --hdr-title: #C49A2A;
+      --hdr-sub: rgba(255,255,255,0.75);
+      --hdr-link: rgba(255,255,255,0.55);
+      --app-bg: #f7f3ee;
+      --primary: #5C3D1E;
+      --primary-hover: #7a5230;
+      --primary-text: #C49A2A;
+      --user-bubble: #C49A2A;
+      --user-text: #fff;
+      --asst-bubble: #FDF6E3;
+      --asst-text: #3B2107;
+      --accent: #C49A2A;
+      --border: #e0d6cc;
+      --input-border: #d6c9bc;
+      --input-bg: #faf7f4;
+      --quick-bg: #f0ebe3;
+    }
+
+    /* --- Access Mental Health theme --- */
+    #app.access-mode {
+      --hdr-bg: #7B6FA0;
+      --hdr-title: #C8DDD3;
+      --hdr-sub: rgba(255,255,255,0.75);
+      --hdr-link: rgba(255,255,255,0.6);
+      --app-bg: #F8F8F8;
+      --primary: #9E9FD8;
+      --primary-hover: #7B6FA0;
+      --primary-text: #fff;
+      --user-bubble: #9E9FD8;
+      --user-text: #fff;
+      --asst-bubble: #EEF3F1;
+      --asst-text: #2a2a3a;
+      --accent: #9E9FD8;
+      --border: #C8DDD3;
+      --input-border: #C8DDD3;
+      --input-bg: #fff;
+      --quick-bg: #E4E4E4;
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: #ede8e1;
       height: 100dvh;
       display: flex;
       justify-content: center;
+      transition: background 0.2s;
     }
+
+    body.access-mode { background: #ECECEC; }
 
     #app {
       width: 100%;
@@ -21,28 +66,30 @@
       height: 100dvh;
       display: flex;
       flex-direction: column;
-      background: #f7f3ee;
+      background: var(--app-bg);
       box-shadow: 0 0 40px rgba(0,0,0,0.12);
+      transition: background 0.2s;
     }
 
     header {
-      background: #5C3D1E;
+      background: var(--hdr-bg);
       padding: 16px 20px;
       flex-shrink: 0;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
       position: relative;
+      transition: background 0.2s;
     }
 
     header h1 {
       font-size: 18px;
       font-weight: 700;
-      color: #C49A2A;
+      color: var(--hdr-title);
       letter-spacing: 0.01em;
     }
 
     header p {
       font-size: 12px;
-      color: rgba(255,255,255,0.75);
+      color: var(--hdr-sub);
       margin-top: 2px;
     }
 
@@ -52,25 +99,42 @@
       right: 20px;
       transform: translateY(-50%);
       display: flex;
-      gap: 14px;
+      gap: 10px;
       align-items: center;
     }
 
     #header-actions a {
-      color: rgba(255,255,255,0.55);
+      color: var(--hdr-link);
       font-size: 12px;
       text-decoration: none;
     }
 
-    #header-actions a:hover { color: #C49A2A; }
+    #header-actions a:hover { color: var(--hdr-title); }
+
+    #mode-toggle {
+      font-size: 11px;
+      font-weight: 600;
+      font-family: inherit;
+      color: var(--hdr-title);
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 12px;
+      padding: 3px 9px;
+      cursor: pointer;
+      white-space: nowrap;
+      line-height: 1.6;
+      transition: background 0.15s;
+    }
+
+    #mode-toggle:hover { background: rgba(255,255,255,0.22); }
 
     #reconnect-btn {
       font-size: 12px;
       font-weight: 600;
       font-family: inherit;
-      color: #C49A2A;
+      color: var(--hdr-title);
       background: transparent;
-      border: 1.5px solid #C49A2A;
+      border: 1.5px solid var(--hdr-title);
       border-radius: 12px;
       padding: 3px 10px;
       cursor: pointer;
@@ -78,7 +142,7 @@
       line-height: 1.6;
     }
 
-    #reconnect-btn:hover { background: rgba(196,154,42,0.12); }
+    #reconnect-btn:hover { background: rgba(255,255,255,0.1); }
 
     #messages {
       flex: 1;
@@ -101,16 +165,16 @@
     }
 
     .bubble.assistant {
-      background: #FDF6E3;
-      color: #3B2107;
+      background: var(--asst-bubble);
+      color: var(--asst-text);
       border-bottom-left-radius: 4px;
       align-self: flex-start;
       box-shadow: 0 1px 4px rgba(0,0,0,0.07);
     }
 
     .bubble.user {
-      background: #C49A2A;
-      color: #fff;
+      background: var(--user-bubble);
+      color: var(--user-text);
       border-bottom-right-radius: 4px;
       align-self: flex-end;
       box-shadow: 0 1px 4px rgba(0,0,0,0.1);
@@ -142,7 +206,7 @@
       align-items: center;
       gap: 6px;
       padding: 14px 18px;
-      background: #FDF6E3;
+      background: var(--asst-bubble);
       border-radius: 18px;
       border-bottom-left-radius: 4px;
       align-self: flex-start;
@@ -152,7 +216,7 @@
     .typing span {
       width: 8px;
       height: 8px;
-      background: #C49A2A;
+      background: var(--accent);
       border-radius: 50%;
       animation: bounce 1.2s infinite;
     }
@@ -180,7 +244,7 @@
     .preview-card .preview-title {
       font-size: 15px;
       font-weight: 700;
-      color: #5C3D1E;
+      color: var(--primary);
       margin-bottom: 4px;
     }
 
@@ -246,8 +310,8 @@
     }
 
     .btn-confirm {
-      background: #5C3D1E;
-      color: #C49A2A;
+      background: var(--primary);
+      color: var(--primary-text);
       border: none;
       border-radius: 8px;
       padding: 10px 20px;
@@ -258,7 +322,7 @@
       transition: background 0.15s;
     }
 
-    .btn-confirm:hover { background: #7a5230; }
+    .btn-confirm:hover { background: var(--primary-hover); }
     .btn-confirm:disabled { opacity: 0.5; cursor: default; }
 
     .btn-cancel {
@@ -278,7 +342,7 @@
 
     .preview-card .preview-status {
       font-size: 13px;
-      color: #5C3D1E;
+      color: var(--primary);
       padding: 6px 0;
     }
 
@@ -314,31 +378,31 @@
     }
 
     .payment-form input {
-      border: 1.5px solid #d6c9bc;
+      border: 1.5px solid var(--input-border);
       border-radius: 8px;
       padding: 9px 12px;
       font-size: 14px;
       font-family: inherit;
       color: #2a1a08;
-      background: #faf7f4;
+      background: var(--input-bg);
       outline: none;
       transition: border-color 0.15s;
     }
 
     .payment-form input:focus,
     .payment-form select:focus {
-      border-color: #C49A2A;
+      border-color: var(--accent);
       background: #fff;
     }
 
     .payment-form select {
-      border: 1.5px solid #d6c9bc;
+      border: 1.5px solid var(--input-border);
       border-radius: 8px;
       padding: 9px 12px;
       font-size: 14px;
       font-family: inherit;
       color: #2a1a08;
-      background: #faf7f4;
+      background: var(--input-bg);
       outline: none;
       appearance: none;
       cursor: pointer;
@@ -352,16 +416,16 @@
       padding: 10px 16px;
       overflow-x: auto;
       flex-shrink: 0;
-      background: #f0ebe3;
-      border-top: 1px solid #e0d6cc;
+      background: var(--quick-bg);
+      border-top: 1px solid var(--border);
       scrollbar-width: none;
     }
 
     #quick-actions::-webkit-scrollbar { display: none; }
 
     .quick-btn {
-      background: #5C3D1E;
-      color: #C49A2A;
+      background: var(--primary);
+      color: var(--primary-text);
       border: none;
       border-radius: 20px;
       padding: 7px 16px;
@@ -375,12 +439,28 @@
       transition: background 0.15s;
     }
 
-    .quick-btn:hover { background: #7a5230; }
+    .quick-btn:hover { background: var(--primary-hover); }
+
+    /* --- Access Mental Health coming-soon notice --- */
+    #access-notice {
+      display: none;
+      padding: 10px 16px;
+      background: var(--quick-bg);
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      color: #666;
+      flex-shrink: 0;
+      text-align: center;
+      font-style: italic;
+    }
+
+    #app.access-mode #quick-actions { display: none; }
+    #app.access-mode #access-notice { display: block; }
 
     /* --- Input row --- */
     #input-row {
       background: #fff;
-      border-top: 1px solid #e0d6cc;
+      border-top: 1px solid var(--border);
       padding: 12px 16px;
       display: flex;
       gap: 10px;
@@ -390,7 +470,7 @@
 
     #user-input {
       flex: 1;
-      border: 1.5px solid #d6c9bc;
+      border: 1.5px solid var(--input-border);
       border-radius: 22px;
       padding: 10px 16px;
       font-size: 14px;
@@ -401,20 +481,20 @@
       max-height: 120px;
       overflow-y: auto;
       color: #2a1a08;
-      background: #faf7f4;
+      background: var(--input-bg);
       transition: border-color 0.15s;
     }
 
     #user-input::placeholder { color: #a9998a; }
-    #user-input:focus { border-color: #C49A2A; background: #fff; }
+    #user-input:focus { border-color: var(--accent); background: #fff; }
 
     #send-btn {
       height: 42px;
       padding: 0 20px;
       border-radius: 22px;
       border: none;
-      background: #5C3D1E;
-      color: #C49A2A;
+      background: var(--primary);
+      color: var(--primary-text);
       font-size: 14px;
       font-weight: 600;
       font-family: inherit;
@@ -424,7 +504,7 @@
       transition: background 0.15s, opacity 0.15s;
     }
 
-    #send-btn:hover { background: #7a5230; }
+    #send-btn:hover { background: var(--primary-hover); }
     #send-btn:disabled { opacity: 0.4; cursor: default; }
   </style>
 </head>
@@ -435,6 +515,7 @@
     <h1>Casa QuickBooks Companion</h1>
     <p>Powered by Mi Casa Care Homes</p>
     <div id="header-actions">
+      <button id="mode-toggle">Switch to Access Mental Health</button>
       <a href="/connect" id="reconnect-btn">Reconnect QB</a>
       <a href="/admin">Admin</a>
       <a href="/auth/logout">Sign out</a>
@@ -442,6 +523,8 @@
   </header>
 
   <div id="messages"></div>
+
+  <div id="access-notice">QuickBooks automation for Access Mental Health is coming soon. For now, ask me any QuickBooks how-to question.</div>
 
   <div id="quick-actions">
     <button class="quick-btn" data-action="create invoices">Create Invoices</button>
@@ -527,11 +610,69 @@ Mi Casa operates licensed adult care homes. Residents pay for room, board, and p
 - If a transaction is unusual, note what to watch out for
 - Always remind staff to save/finalize the transaction at the end`;
 
+const ACCESS_SYSTEM_PROMPT = `You are a QuickBooks assistant for Access Mental Health, a psychiatric practice in Wichita, Kansas owned by Monica. You help staff record transactions correctly in QuickBooks Online.
+
+PRACTICE INFO:
+- Address: 902 W 29th St N Suite 102, Wichita, KS
+- Services: psychiatric medication management, offered in person and via telehealth
+- Patient demographic: adults 18 and older
+- Insurance: accepts most major insurance providers
+
+CLINICAL SERVICES OFFERED (for billing categorization only — never discuss clinical details):
+- Psychiatric evaluation
+- Diagnosis
+- Medication management
+- Treatment planning
+- Mental status exams
+- Screening tools
+- Lab monitoring
+
+IMPORTANT RULES:
+- You only help with QuickBooks billing and bookkeeping questions
+- NEVER discuss, store, or reference any patient clinical information, diagnoses, treatment details, or medical history — this is a strict HIPAA boundary
+- If asked about anything clinical, redirect: 'I can only help with QuickBooks and billing questions. For clinical matters please use the appropriate clinical system.'
+- Help categorize transactions by service type (psychiatric evaluation, medication management, telehealth visit, etc.) without ever recording specific diagnoses or clinical notes
+- Keep answers concise and step-by-step
+- You are not a licensed accountant — for complex tax or compliance questions recommend consulting their accountant`;
+
 const messagesEl = document.getElementById('messages');
 const inputEl = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
 
 let history = [];
+let currentMode = sessionStorage.getItem('qb-mode') || 'micasa';
+
+function applyMode(mode) {
+  currentMode = mode;
+  sessionStorage.setItem('qb-mode', mode);
+  const app = document.getElementById('app');
+  const toggle = document.getElementById('mode-toggle');
+  const h1 = document.querySelector('header h1');
+  const sub = document.querySelector('header p');
+  if (mode === 'access') {
+    app.classList.add('access-mode');
+    document.body.classList.add('access-mode');
+    h1.textContent = 'Access QuickBooks Assistant';
+    sub.textContent = 'Powered by Access Mental Health';
+    toggle.textContent = 'Switch to Mi Casa';
+  } else {
+    app.classList.remove('access-mode');
+    document.body.classList.remove('access-mode');
+    h1.textContent = 'Casa QuickBooks Companion';
+    sub.textContent = 'Powered by Mi Casa Care Homes';
+    toggle.textContent = 'Switch to Access Mental Health';
+  }
+  history = [];
+  messagesEl.innerHTML = '';
+  const welcome = mode === 'access'
+    ? "Hi! I'm your Access Mental Health QuickBooks Assistant. Ask me any QuickBooks billing or bookkeeping question and I'll walk you through it step by step."
+    : "Hi! I am your Casa QuickBooks Companion. Ask me how to record any transaction and I will walk you through it step by step.";
+  addBubble('assistant', welcome);
+}
+
+document.getElementById('mode-toggle').addEventListener('click', () => {
+  applyMode(currentMode === 'micasa' ? 'access' : 'micasa');
+});
 
 const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 });
 
@@ -1035,10 +1176,11 @@ async function sendMessage() {
   showTyping();
 
   try {
+    const activePrompt = currentMode === 'access' ? ACCESS_SYSTEM_PROMPT : SYSTEM_PROMPT;
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: history, system: SYSTEM_PROMPT })
+      body: JSON.stringify({ messages: history, system: activePrompt, mode: currentMode })
     });
 
     const data = await res.json();
@@ -1048,14 +1190,11 @@ async function sendMessage() {
       const errMsg = data?.error?.message || data?.error || 'Something went wrong. Please try again.';
       addBubble('error', errMsg);
       history.pop();
-    } else if (data.intent === 'create-invoices') {
-      showInvoicePreview();
-    } else if (data.intent === 'record-payment') {
-      showPaymentCard(data.paymentData);
-    } else if (data.intent === 'add-resident') {
-      showNewResidentCard();
-    } else if (data.intent === 'overdue-summary') {
-      showOverdueSummary();
+    } else if (data.intent && currentMode !== 'access') {
+      if (data.intent === 'create-invoices') showInvoicePreview();
+      else if (data.intent === 'record-payment') showPaymentCard(data.paymentData);
+      else if (data.intent === 'add-resident') showNewResidentCard();
+      else if (data.intent === 'overdue-summary') showOverdueSummary();
     } else {
       const reply = data?.text || '(No response)';
       history.push({ role: 'assistant', content: reply });
@@ -1087,8 +1226,8 @@ inputEl.addEventListener('keydown', e => {
 
 sendBtn.addEventListener('click', sendMessage);
 
-// Welcome message
-addBubble('assistant', "Hi! I am your Casa QuickBooks Companion. Ask me how to record any transaction and I will walk you through it step by step.");
+// Apply saved mode and show welcome
+applyMode(currentMode);
 inputEl.focus();
 </script>
 

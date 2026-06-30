@@ -1149,7 +1149,7 @@ app.get('/assistant', requireLogin, (req, res) => {
 
 app.post('/api/chat', requireLoginApi, async (req, res) => {
   try {
-    const { messages, system } = req.body;
+    const { messages, system, mode } = req.body;
 
     const userContent = messages[messages.length - 1]?.content || '';
     const userMsgLower = userContent.toLowerCase();
@@ -1204,8 +1204,8 @@ app.post('/api/chat', requireLoginApi, async (req, res) => {
       intent = 'overdue-summary';
     }
 
-    // When automation is available, skip the AI call — the card replaces the response
-    if (intent) {
+    // When automation is available (Mi Casa only), skip the AI call — the card replaces the response
+    if (intent && mode !== 'access') {
       return res.json({ text: null, intent, paymentData });
     }
 

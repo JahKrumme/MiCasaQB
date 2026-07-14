@@ -84,8 +84,13 @@ let qbRealmId = null;
     const tokens = await loadTokensFromSupabase();
     if (tokens) {
       qbRealmId = tokens.realm_id;
-      oauthClient.setToken({ refresh_token: tokens.refresh_token });
-      console.log('[STARTUP LOAD] Token from Supabase starting:', tokens.refresh_token?.substring(0, 15));
+      oauthClient.setToken({
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        realmId: tokens.realm_id
+      });
+      console.log('[STARTUP LOAD] Refresh token starting:', tokens.refresh_token?.substring(0, 15));
+      console.log('[STARTUP LOAD] Expires at:', tokens.expires_at || 'unknown');
     }
   } catch (e) {
     console.error('Startup QB token load failed:', e.message);
@@ -126,12 +131,19 @@ async function sendEmail(to, subject, html) {
   await gmail.users.messages.send({ userId: 'me', requestBody: { raw: encoded } });
 }
 
-async function saveTokensToSupabase(accessToken, refreshToken, realmId) {
-  console.log('[SUPABASE SAVE] Attempting to save token starting:', refreshToken?.substring(0, 15));
+async function saveTokensToSupabase(accessToken, refreshToken, realmId, expiresAt) {
+  console.log('[SUPABASE SAVE] Attempting to save token starting:', refreshToken?.substring(0, 15), '| expires_at:', expiresAt);
   try {
     const { data, error } = await supabase
       .from('qb_tokens')
-      .upsert({ id: 1, access_token: accessToken, refresh_token: refreshToken, realm_id: realmId })
+      .upsert({
+        id: 1,
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        realm_id: realmId,
+        expires_at: expiresAt || null,
+        updated_at: new Date().toISOString()
+      })
       .select();
     if (error) {
       console.error('[SUPABASE SAVE ERROR]', JSON.stringify(error));
@@ -159,7 +171,6 @@ async function loadTokensFromSupabase() {
 }
 
 async function qbQuery(query) {
-  await oauthClient.refresh();
   const base = process.env.INTUIT_ENVIRONMENT === 'sandbox'
     ? 'https://sandbox-quickbooks.api.intuit.com'
     : 'https://quickbooks.api.intuit.com';
@@ -190,7 +201,6 @@ async function getResidentRates() {
 }
 
 async function qbCreate(endpoint, body) {
-  await oauthClient.refresh();
   const base = process.env.INTUIT_ENVIRONMENT === 'sandbox'
     ? 'https://sandbox-quickbooks.api.intuit.com'
     : 'https://quickbooks.api.intuit.com';
@@ -214,6 +224,15 @@ function requireLoginApi(req, res, next) {
   res.status(401).json({ error: 'Session expired. Please sign in again.' });
 }
 
+let refreshInFlight = null;
+
+function refreshOnce() {
+  if (!refreshInFlight) {
+    refreshInFlight = oauthClient.refresh().finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
 async function ensureQBToken() {
   const { data, error } = await supabase
     .from('qb_tokens')
@@ -230,12 +249,22 @@ async function ensureQBToken() {
     realmId: data.realm_id
   });
 
-  console.log('[QB REFRESH] Attempting refresh with token starting:', data.refresh_token?.substring(0, 15));
-  const authResponse = await oauthClient.refresh();
-  const tokenJson = authResponse.getJson();
-  console.log('[QB REFRESH SUCCESS] New token starting:', tokenJson.refresh_token?.substring(0, 15));
+  // Only refresh if access token is missing or expires within 5 minutes
+  const fiveMinFromNow = new Date(Date.now() + 5 * 60 * 1000);
+  const needsRefresh = !data.access_token || !data.expires_at || new Date(data.expires_at) <= fiveMinFromNow;
 
-  await saveTokensToSupabase(tokenJson.access_token, tokenJson.refresh_token, data.realm_id);
+  if (!needsRefresh) {
+    console.log('[QB TOKEN] Access token valid, skipping refresh. Expires:', data.expires_at);
+    return;
+  }
+
+  console.log('[QB REFRESH] Token expires soon or missing. Refresh token starting:', data.refresh_token?.substring(0, 15));
+  const authResponse = await refreshOnce();
+  const tokenJson = authResponse.getJson();
+  console.log('[QB REFRESH SUCCESS] New refresh token starting:', tokenJson.refresh_token?.substring(0, 15));
+
+  const expiresAt = new Date(Date.now() + (tokenJson.expires_in || 3600) * 1000).toISOString();
+  await saveTokensToSupabase(tokenJson.access_token, tokenJson.refresh_token, data.realm_id, expiresAt);
 }
 
 async function ensureQBTokenMiddleware(req, res, next) {
@@ -686,12 +715,13 @@ app.get('/connect', (req, res) => {
 // QuickBooks callback
 app.get('/callback', async (req, res) => {
   try {
-    await oauthClient.createToken(req.url);
+    const authResponse = await oauthClient.createToken(req.url);
     qbRealmId = req.query.realmId;
-    const token = oauthClient.getToken();
+    const tokenJson = authResponse.getJson();
+    const expiresAt = new Date(Date.now() + (tokenJson.expires_in || 3600) * 1000).toISOString();
     console.log('Callback fired, realmId: ' + req.query.realmId);
-    console.log('Token set on oauthClient: ' + JSON.stringify(token));
-    saveTokensToSupabase(token.access_token, token.refresh_token, qbRealmId).catch(e => console.error('Supabase save error:', e));
+    console.log('[CALLBACK] New token starting:', tokenJson.access_token?.substring(0, 15), '| expires_at:', expiresAt);
+    saveTokensToSupabase(tokenJson.access_token, tokenJson.refresh_token, qbRealmId, expiresAt).catch(e => console.error('Supabase save error:', e));
     res.send('QuickBooks connected! Token stored in memory. <a href="/overdue-invoices">View overdue invoices</a>');
   } catch (e) {
     console.error('QB callback error:', e);

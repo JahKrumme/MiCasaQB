@@ -78,6 +78,7 @@ const gmailAuth = new google.auth.OAuth2(
 
 // QB token stored in memory — loaded from Supabase on startup
 let qbRealmId = null;
+let lastQBRefreshAt = null;
 
 (async () => {
   try {
@@ -117,18 +118,23 @@ async function getGmailClient() {
 
 // GMAIL_REFRESH_TOKEN must be obtained by authorizing with micasacarehomes@gmail.com at /gmail/connect
 async function sendEmail(to, subject, html) {
-  const gmail = await getGmailClient();
-  const message = [
-    'From: Mi Casa Care Homes <micasacarehomes@gmail.com>',
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/html; charset=utf-8',
-    '',
-    html
-  ].join('\n');
-  const encoded = Buffer.from(message).toString('base64url');
-  await gmail.users.messages.send({ userId: 'me', requestBody: { raw: encoded } });
+  try {
+    const gmail = await getGmailClient();
+    const message = [
+      'From: Mi Casa Care Homes <micasacarehomes@gmail.com>',
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      html
+    ].join('\n');
+    const encoded = Buffer.from(message).toString('base64url');
+    await gmail.users.messages.send({ userId: 'me', requestBody: { raw: encoded } });
+  } catch (e) {
+    console.error('[GMAIL AUTH FAIL]', e.message, e.stack || '');
+    throw e;
+  }
 }
 
 async function saveTokensToSupabase(accessToken, refreshToken, realmId, expiresAt) {
@@ -175,8 +181,13 @@ async function qbQuery(query) {
     ? 'https://sandbox-quickbooks.api.intuit.com'
     : 'https://quickbooks.api.intuit.com';
   const url = `${base}/v3/company/${qbRealmId}/query?query=${encodeURIComponent(query)}&minorversion=65`;
-  const response = await oauthClient.makeApiCall({ url });
-  return JSON.parse(response.body);
+  try {
+    const response = await oauthClient.makeApiCall({ url });
+    return JSON.parse(response.body);
+  } catch (e) {
+    console.error('[QB AUTH FAIL] qbQuery:', e.message);
+    throw e;
+  }
 }
 
 async function getActiveCustomers() {
@@ -205,13 +216,18 @@ async function qbCreate(endpoint, body) {
     ? 'https://sandbox-quickbooks.api.intuit.com'
     : 'https://quickbooks.api.intuit.com';
   const url = `${base}/v3/company/${qbRealmId}/${endpoint}?minorversion=65`;
-  const response = await oauthClient.makeApiCall({
-    url,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  return JSON.parse(response.body);
+  try {
+    const response = await oauthClient.makeApiCall({
+      url,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    return JSON.parse(response.body);
+  } catch (e) {
+    console.error('[QB AUTH FAIL] qbCreate:', e.message);
+    throw e;
+  }
 }
 
 function requireLogin(req, res, next) {
@@ -259,12 +275,17 @@ async function ensureQBToken() {
   }
 
   console.log('[QB REFRESH] Token expires soon or missing. Refresh token starting:', data.refresh_token?.substring(0, 15));
-  const authResponse = await refreshOnce();
-  const tokenJson = authResponse.getJson();
-  console.log('[QB REFRESH SUCCESS] New refresh token starting:', tokenJson.refresh_token?.substring(0, 15));
-
-  const expiresAt = new Date(Date.now() + (tokenJson.expires_in || 3600) * 1000).toISOString();
-  await saveTokensToSupabase(tokenJson.access_token, tokenJson.refresh_token, data.realm_id, expiresAt);
+  try {
+    const authResponse = await refreshOnce();
+    const tokenJson = authResponse.getJson();
+    console.log('[QB REFRESH SUCCESS] New refresh token starting:', tokenJson.refresh_token?.substring(0, 15));
+    const expiresAt = new Date(Date.now() + (tokenJson.expires_in || 3600) * 1000).toISOString();
+    await saveTokensToSupabase(tokenJson.access_token, tokenJson.refresh_token, data.realm_id, expiresAt);
+    lastQBRefreshAt = new Date().toISOString();
+  } catch (e) {
+    console.error('[QB AUTH FAIL] Token refresh failed:', e.message);
+    throw e;
+  }
 }
 
 async function ensureQBTokenMiddleware(req, res, next) {
@@ -273,7 +294,7 @@ async function ensureQBTokenMiddleware(req, res, next) {
     await ensureQBToken();
     next();
   } catch (e) {
-    console.error('QB token refresh failed:', e.message);
+    console.error('[QB AUTH FAIL] Middleware:', e.message);
     res.status(503).json({ error: 'QB token expired', reconnect: '/connect' });
   }
 }
@@ -1492,6 +1513,109 @@ app.post('/qb/create-resident', async (req, res) => {
     console.error('Create resident error:', e);
     res.status(500).json({ error: e.message });
   }
+});
+
+app.get('/health', requireLogin, async (req, res) => {
+  const now = Date.now();
+
+  // Supabase + QB token
+  let supabaseOk = false, supabaseErr = '', qbData = null;
+  try {
+    const { data, error } = await supabase.from('qb_tokens').select('*').eq('id', 1).single();
+    if (error) throw new Error(error.message);
+    supabaseOk = true;
+    qbData = data;
+  } catch (e) { supabaseErr = e.message; }
+
+  // QB status
+  const qbAccessPresent = !!qbData?.access_token;
+  const qbRefreshPresent = !!qbData?.refresh_token;
+  const qbExpiresAt = qbData?.expires_at ? new Date(qbData.expires_at) : null;
+  const qbMinsLeft = qbExpiresAt ? Math.round((qbExpiresAt.getTime() - now) / 60000) : null;
+  const qbExpiryText = qbExpiresAt
+    ? (qbMinsLeft > 0
+      ? `${qbMinsLeft} min remaining (${qbExpiresAt.toISOString()})`
+      : `EXPIRED ${Math.abs(qbMinsLeft)} min ago (${qbExpiresAt.toISOString()})`)
+    : 'column missing — run: ALTER TABLE qb_tokens ADD COLUMN expires_at timestamptz';
+  const qbLastSave = qbData?.updated_at || null;
+
+  // Gmail
+  let gmailOk = false, gmailErr = '';
+  const gmailTokenPresent = !!process.env.GMAIL_REFRESH_TOKEN;
+  if (gmailTokenPresent) {
+    try {
+      gmailAuth.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
+      const { token } = await gmailAuth.getAccessToken();
+      gmailOk = !!token;
+      if (!gmailOk) gmailErr = 'getAccessToken returned no token';
+    } catch (e) { gmailErr = e.message; }
+  } else {
+    gmailErr = 'GMAIL_REFRESH_TOKEN not set';
+  }
+
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function row(ok, label, detail) {
+    const cls = ok ? 'ok' : 'fail';
+    const icon = ok ? '✓' : '✗';
+    return `<div class="row"><span class="icon ${cls}">${icon}</span><span class="label">${label}</span>${detail != null ? `<span class="detail ${cls}">${esc(String(detail))}</span>` : ''}</div>`;
+  }
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Health — Mi Casa</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #ede8e1; min-height: 100vh; padding: 32px 16px; }
+.page { max-width: 580px; margin: 0 auto; }
+header { background: #5C3D1E; border-radius: 14px 14px 0 0; padding: 20px 24px; display: flex; align-items: center; }
+header h1 { font-size: 18px; font-weight: 700; color: #C49A2A; flex: 1; }
+header a { color: rgba(255,255,255,0.6); text-decoration: none; font-size: 13px; }
+header a:hover { color: #C49A2A; }
+.card { background: #fff; border-radius: 0 0 14px 14px; box-shadow: 0 4px 24px rgba(92,61,30,0.12); }
+.section { padding: 20px 24px; border-bottom: 1px solid #f0ebe3; }
+.section:last-child { border-bottom: none; }
+.section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin-bottom: 10px; }
+.row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f5f1ec; }
+.row:last-child { border-bottom: none; }
+.icon { font-weight: 700; min-width: 16px; font-size: 14px; line-height: 1.5; }
+.ok { color: #2d6a2d; }
+.fail { color: #9b0000; }
+.label { font-size: 14px; font-weight: 600; color: #2a1a08; min-width: 190px; }
+.detail { font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace; word-break: break-all; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>System Health</h1>
+    <a href="/assistant">&larr; Back to Companion</a>
+  </header>
+  <div class="card">
+    <div class="section">
+      <div class="section-title">QuickBooks</div>
+      ${row(qbAccessPresent, 'Access token', qbAccessPresent ? 'present' : 'missing')}
+      ${row(qbRefreshPresent, 'Refresh token', qbRefreshPresent ? 'present' : 'missing')}
+      ${row(!!qbExpiresAt, 'Expiry tracked', qbExpiryText)}
+      ${row(qbMinsLeft !== null && qbMinsLeft > 0, 'Token not expired', qbMinsLeft !== null ? qbExpiryText : (qbExpiresAt ? 'EXPIRED' : 'expires_at unknown'))}
+      ${row(!!qbLastSave, 'Last token save', qbLastSave || 'updated_at column missing')}
+      ${row(!!lastQBRefreshAt, 'Refreshed this session', lastQBRefreshAt || 'not yet — token was valid at startup')}
+    </div>
+    <div class="section">
+      <div class="section-title">Gmail</div>
+      ${row(gmailTokenPresent, 'Refresh token configured', gmailTokenPresent ? 'set' : 'GMAIL_REFRESH_TOKEN not set')}
+      ${row(gmailOk, 'Auth check (token exchange)', gmailOk ? 'OK — access token obtained' : gmailErr)}
+    </div>
+    <div class="section">
+      <div class="section-title">Supabase</div>
+      ${row(supabaseOk, 'Read qb_tokens', supabaseOk ? 'OK' : supabaseErr)}
+    </div>
+  </div>
+</div>
+</body>
+</html>`);
 });
 
 const PORT = process.env.PORT || 3000;

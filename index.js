@@ -758,6 +758,7 @@ app.get('/callback', async (req, res) => {
 app.get('/gmail/connect', (req, res) => {
   const authUrl = gmailAuth.generateAuthUrl({
     access_type: 'offline',
+    prompt: 'consent',
     scope: ['https://www.googleapis.com/auth/gmail.send']
   });
   res.redirect(authUrl);

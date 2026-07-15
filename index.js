@@ -70,10 +70,14 @@ const oauthClient = new OAuthClient({
 });
 
 // Gmail OAuth
+const gmailCallbackURL = process.env.RENDER_EXTERNAL_URL
+  ? `${process.env.RENDER_EXTERNAL_URL}/gmail/callback`
+  : 'http://localhost:3000/gmail/callback';
+
 const gmailAuth = new google.auth.OAuth2(
   process.env.GMAIL_CLIENT_ID,
   process.env.GMAIL_CLIENT_SECRET,
-  'http://localhost:3000/gmail/callback'
+  gmailCallbackURL
 );
 
 // QB token stored in memory — loaded from Supabase on startup

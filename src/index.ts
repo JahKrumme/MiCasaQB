@@ -1,0 +1,36 @@
+import { Hono } from 'hono';
+import type { AppEnv } from './honoTypes';
+import { securityHeaders } from './middleware/security';
+import { authRoutes } from './routes/auth';
+import { qboRoutes } from './routes/qbo';
+import { qboApiRoutes } from './routes/qboApi';
+import { chatRoutes } from './routes/chat';
+import { adminRoutes } from './routes/admin';
+import { invitationRoutes } from './routes/invitations';
+import { cronRoutes } from './routes/cron';
+
+const app = new Hono<AppEnv>();
+
+app.use('*', securityHeaders);
+
+// Lightweight, unauthenticated liveness check. Deliberately returns no
+// connection state, token presence, or any other detail — replaces the old
+// /health debug page, which leaked token prefixes and Supabase errors.
+app.get('/api/health', c => c.json({ status: 'ok' }));
+
+app.route('/api/auth', authRoutes);
+app.route('/api/qbo', qboRoutes);
+app.route('/api/qbo', qboApiRoutes);
+app.route('/api/chat', chatRoutes);
+app.route('/api/admin', adminRoutes);
+app.route('/api/invitations', invitationRoutes);
+app.route('/api/cron', cronRoutes);
+
+app.notFound(c => c.json({ error: 'Not found' }, 404));
+
+app.onError((err, c) => {
+  console.error('[UNHANDLED ERROR]', err instanceof Error ? err.message : 'unknown');
+  return c.json({ error: 'Internal server error' }, 500);
+});
+
+export default app;

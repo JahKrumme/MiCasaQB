@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Mi Casa Care Homes</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="shortcut icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#5D440B">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="static-page-body admin-body">
+<div class="admin-page">
+  <header class="admin-header">
+    <a href="/" class="header-brand" aria-label="Mi Casa QuickBooks Assistant — go to dashboard">
+      <img src="/assets/brand/mi-casa-icon-white.png" alt="" aria-hidden="true" width="26" height="26">
+      <span class="visually-hidden">Mi Casa QuickBooks Assistant</span>
+    </a>
+    <h1>Staff &amp; Connection Admin</h1>
+    <a href="/index.html">&larr; Back to Assistant</a>
+  </header>
+  <div class="admin-card">
+
+    <div class="admin-section">
+      <div class="admin-section-title">QuickBooks Connection</div>
+      <div class="qbo-status" id="qbo-status">
+        <div class="qbo-status-info">
+          <svg class="qbo-status-icon" id="qbo-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle></svg>
+          <span class="qbo-status-text">
+            <span class="qbo-status-label" id="qbo-status-label">Checking connection&hellip;</span>
+            <span class="qbo-status-detail" id="qbo-status-detail"></span>
+          </span>
+        </div>
+        <div class="qbo-status-actions" id="qbo-status-actions"></div>
+      </div>
+    </div>
+
+    <div class="admin-section">
+      <div class="admin-section-title">Invite a Staff Member</div>
+      <div class="add-row">
+        <label for="invite-email">Email</label>
+        <input type="email" id="invite-email" placeholder="name@example.com">
+        <label for="invite-role">Role</label>
+        <select id="invite-role">
+          <option value="staff">Staff — normal assistant &amp; reporting features</option>
+          <option value="read_only">Read Only — view reports only</option>
+          <option value="admin">Admin — full access, manages users &amp; QuickBooks</option>
+        </select>
+        <button class="btn-add" id="invite-btn">Send Invitation</button>
+      </div>
+      <div id="invite-toast"></div>
+    </div>
+
+    <div class="admin-section">
+      <div class="admin-section-title">Pending Invitations</div>
+      <div class="table-scroll"><table class="admin-table"><tbody id="invitation-list"><tr><td class="empty">Loading&hellip;</td></tr></tbody></table></div>
+    </div>
+
+    <div class="admin-section">
+      <div class="admin-section-title">Staff Accounts</div>
+      <div class="table-scroll"><table class="admin-table"><tbody id="user-list"><tr><td class="empty">Loading&hellip;</td></tr></tbody></table></div>
+      <div id="toast"></div>
+    </div>
+
+    <div class="admin-section">
+      <div class="admin-section-title">Email Delivery</div>
+      <p class="subtitle mb-12">Sends a real test email to your own account's address right now, using the Gmail integration.</p>
+      <button class="btn-add" id="test-email-btn">Send Test Email</button>
+      <div id="test-email-toast"></div>
+    </div>
+
+    <div class="admin-section">
+      <div class="admin-section-title">Recent Activity</div>
+      <ul class="audit-list" id="audit-list"><li class="empty">Loading&hellip;</li></ul>
+    </div>
+
+  </div>
+</div>
+<script src="/admin.js"></script>
+</body>
+</html>

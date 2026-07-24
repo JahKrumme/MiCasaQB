@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mi Casa QuickBooks Assistant</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="shortcut icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#5D440B">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Mi Casa QB">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="chat-body">
+
+<div id="app">
+  <header>
+    <a href="/" class="header-brand" aria-label="Mi Casa QuickBooks Assistant — go to dashboard">
+      <img src="/assets/brand/mi-casa-icon-white.png" alt="" aria-hidden="true" width="30" height="30">
+      <span>
+        <h1>Mi Casa QuickBooks Assistant</h1>
+        <p>Powered by Mi Casa Care Homes</p>
+      </span>
+    </a>
+    <div id="header-actions">
+      <button id="install-btn" hidden>Install App</button>
+      <button id="mode-toggle">Access Mental Health</button>
+      <a href="/api/qbo/connect" id="reconnect-btn" hidden>Reconnect</a>
+      <a href="/admin.html" id="admin-link" hidden>Admin</a>
+      <button class="link-btn" id="signout-btn">Sign out</button>
+    </div>
+  </header>
+
+  <div id="banner" hidden></div>
+
+  <div id="messages"></div>
+
+  <div id="access-notice">QuickBooks automation for Access Mental Health is coming soon. For now, ask me any QuickBooks how-to question.</div>
+
+  <div id="quick-actions">
+    <button class="quick-btn" data-action="create invoices">Create Invoices</button>
+    <button class="quick-btn" data-action="record a payment">Record Payment</button>
+    <button class="quick-btn" data-action="add a new resident">Add Resident</button>
+    <button class="quick-btn" data-action="show overdue invoices">Overdue Invoices</button>
+  </div>
+
+  <div id="input-row">
+    <textarea id="user-input" rows="1" placeholder="Ask about recording a transaction…"></textarea>
+    <button id="send-btn">Send</button>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

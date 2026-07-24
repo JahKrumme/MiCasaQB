@@ -1,0 +1,28 @@
+# Copy this file to .dev.vars for local development (`wrangler dev` loads it automatically).
+# .dev.vars is gitignored — never commit real values.
+# In production these are set with `wrangler secret put <NAME>` (see README), NOT in wrangler.jsonc.
+
+# --- QuickBooks / Intuit OAuth ---
+INTUIT_CLIENT_ID=your-intuit-app-client-id
+INTUIT_CLIENT_SECRET=your-intuit-app-client-secret
+
+# --- Token encryption (AES-256-GCM) ---
+# Must decode from base64 to EXACTLY 32 bytes. Generate with:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+TOKEN_ENCRYPTION_KEY=REPLACE_WITH_BASE64_32_BYTE_KEY
+
+# --- Staff session signing ---
+# Generate with:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+SESSION_SECRET=REPLACE_WITH_RANDOM_SECRET
+
+# --- Gmail (transactional report emails) ---
+GMAIL_CLIENT_ID=your-gmail-oauth-client-id
+GMAIL_CLIENT_SECRET=your-gmail-oauth-client-secret
+GMAIL_REFRESH_TOKEN=your-gmail-oauth-refresh-token
+
+# --- Groq (chat assistant fallback) ---
+GROQ_API_KEY=your-groq-api-key
+
+# --- Shared secret GitHub Actions sends to trigger scheduled report jobs ---
+CRON_SECRET=REPLACE_WITH_RANDOM_SECRET

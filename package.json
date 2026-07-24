@@ -1,25 +1,34 @@
 {
-  "name": "quikbooks",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "qb-assistant",
+  "version": "2.0.0",
+  "description": "Mi Casa Care Homes QuickBooks Assistant — Cloudflare Workers + D1",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "wrangler dev",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test --ext .ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create mi-casa-qb-assistant-db",
+    "db:migrate:local": "wrangler d1 migrations apply mi-casa-qb-assistant-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply mi-casa-qb-assistant-db --remote",
+    "secrets:list": "wrangler secret list",
+    "create-admin": "node scripts/create-admin.mjs",
+    "create-admin:interactive": "node scripts/create-admin-interactive.mjs"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "@supabase/supabase-js": "^2.108.2",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "express-session": "^1.19.0",
-    "googleapis": "^173.0.0",
-    "groq-sdk": "^1.3.0",
-    "intuit-oauth": "^4.2.3",
-    "node-cron": "^4.5.0",
-    "passport": "^0.7.0",
-    "passport-google-oauth20": "^2.0.0"
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260722.1",
+    "@typescript-eslint/eslint-plugin": "^8.16.0",
+    "@typescript-eslint/parser": "^8.16.0",
+    "eslint": "^8.57.1",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.0.0"
   }
 }

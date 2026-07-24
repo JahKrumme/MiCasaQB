@@ -1,0 +1,29 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "qb-assistant",
+	"main": "src/index.ts",
+	"compatibility_date": "2024-09-23",
+	"observability": {
+		"enabled": true
+	},
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "mi-casa-qb-assistant-db",
+			"database_id": "95ce4ad3-0831-48b1-9a0c-4b87a9af6207",
+			"migrations_dir": "migrations"
+		}
+	],
+	"vars": {
+		// Non-secret configuration. INTUIT_ENVIRONMENT is "sandbox" or "production".
+		"INTUIT_ENVIRONMENT": "production",
+		// Optional: pin the public hostname used to build OAuth redirect/callback URLs.
+		// Leave blank ("") to derive it from the incoming request's own origin, which
+		// lets a *.workers.dev URL work before the custom domain is connected.
+		"APP_BASE_URL": "https://qb-assistant.elijahkrumme.workers.dev"
+	}
+}

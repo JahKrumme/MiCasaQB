@@ -9,7 +9,8 @@ jobs:
   run-monthly-invoices:
     runs-on: ubuntu-latest
     steps:
-      - name: Wake up Render and send monthly invoice notice
+      - name: Trigger monthly invoice notice on the Worker
         run: |
-          sleep 90
-          curl --fail-with-body https://micasaqb.onrender.com/run-monthly-invoices
+          curl --fail-with-body -sS -X POST \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.WORKER_URL }}/api/cron/monthly-invoices"

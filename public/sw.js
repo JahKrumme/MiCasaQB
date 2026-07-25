@@ -5,7 +5,7 @@
 //   - Anything under /api/ — QuickBooks data, auth, OAuth callbacks, chat,
 //     admin — is NEVER cached and NEVER intercepted. Those requests are left
 //     completely untouched so the browser handles them natively.
-const CACHE_NAME = 'mc-qb-shell-v2';
+const CACHE_NAME = 'mc-qb-shell-v3';
 
 const APP_SHELL = [
   '/index.html',
@@ -33,7 +33,10 @@ const APP_SHELL = [
   '/icons/icon-maskable-192.png',
   '/icons/icon-maskable-512.png',
   '/assets/brand/mi-casa-logo-full-black.png',
-  '/assets/brand/mi-casa-icon-white.png'
+  '/assets/brand/mi-casa-logo-full-white.png',
+  '/assets/brand/mi-casa-icon-black.png',
+  '/assets/brand/mi-casa-icon-white.png',
+  '/assets/brand/access-mental-health-logo.png'
 ];
 
 self.addEventListener('install', event => {

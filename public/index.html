@@ -20,7 +20,7 @@
 <div id="app">
   <header>
     <a href="/" class="header-brand" aria-label="Mi Casa QuickBooks Assistant — go to dashboard">
-      <img src="/assets/brand/mi-casa-icon-white.png" alt="" aria-hidden="true" width="30" height="30">
+      <img class="logo-compact" src="/assets/brand/mi-casa-icon-white.png" alt="" aria-hidden="true">
       <span>
         <h1>Mi Casa QuickBooks Assistant</h1>
         <p>Powered by Mi Casa Care Homes</p>
@@ -28,6 +28,9 @@
     </a>
     <div id="header-actions">
       <button id="install-btn" hidden>Install App</button>
+      <span id="org-indicator" class="org-indicator" hidden>
+        <img class="logo-amh" src="/assets/brand/access-mental-health-logo.png" alt="Access Mental Health">
+      </span>
       <button id="mode-toggle">Access Mental Health</button>
       <a href="/api/qbo/connect" id="reconnect-btn" hidden>Reconnect</a>
       <a href="/admin.html" id="admin-link" hidden>Admin</a>
@@ -35,11 +38,14 @@
     </div>
   </header>
 
-  <div id="banner" hidden></div>
+  <div id="banner" hidden role="status"></div>
 
-  <div id="messages"></div>
+  <div id="messages" role="log" aria-live="polite" aria-label="Conversation with the Mi Casa QuickBooks Assistant"></div>
 
-  <div id="access-notice">QuickBooks automation for Access Mental Health is coming soon. For now, ask me any QuickBooks how-to question.</div>
+  <div id="access-notice">
+    <img class="logo-amh" src="/assets/brand/access-mental-health-logo.png" alt="Access Mental Health">
+    <span>QuickBooks automation for Access Mental Health is coming soon. For now, ask me any QuickBooks how-to question.</span>
+  </div>
 
   <div id="quick-actions">
     <button class="quick-btn" data-action="create invoices">Create Invoices</button>
@@ -49,8 +55,8 @@
   </div>
 
   <div id="input-row">
-    <textarea id="user-input" rows="1" placeholder="Ask about recording a transaction…"></textarea>
-    <button id="send-btn">Send</button>
+    <textarea id="user-input" rows="1" placeholder="Ask about recording a transaction…" aria-label="Message to the Mi Casa QuickBooks Assistant"></textarea>
+    <button id="send-btn" aria-label="Send message">Send</button>
   </div>
 </div>
 

@@ -1,8 +1,8 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../honoTypes';
 import { requireAuth, blockIfPasswordChangeRequired } from '../middleware/auth';
 import { requireSameOrigin } from '../middleware/security';
-import { groqChatCompletion, type ChatMessage } from '../lib/groq';
+import { groqChatCompletion, GroqError, GROQ_MODEL, type ChatMessage } from '../lib/groq';
 import { TokenRepository } from '../lib/tokenRepository';
 import { getActiveCustomerNames, getResidentRates } from './qboApi';
 
@@ -17,9 +17,116 @@ const PAYMENT_KEYWORDS = ['record payment', 'record a payment', 'received paymen
 const RESIDENT_KEYWORDS = ['add resident', 'new resident', 'add client', 'move in'];
 const OVERDUE_KEYWORDS = ['overdue', 'unpaid', 'who owes', 'outstanding'];
 
+export const MAX_MESSAGE_LENGTH = 4000;
+export const MAX_MESSAGES = 50;
+const VALID_ROLES = new Set(['system', 'user', 'assistant']);
+
+interface ChatRequestBody {
+  messages: ChatMessage[];
+  system: string;
+  mode: string;
+}
+
+/** Pure validator so it can be exercised directly from tests. */
+export function validateChatRequest(body: unknown): { ok: true; data: ChatRequestBody } | { ok: false; error: string } {
+  if (typeof body !== 'object' || body === null) {
+    return { ok: false, error: 'Request body must be a JSON object.' };
+  }
+  const { messages, system, mode } = body as Record<string, unknown>;
+
+  if (typeof system !== 'string') {
+    return { ok: false, error: 'Missing or invalid "system" field.' };
+  }
+  if (typeof mode !== 'string') {
+    return { ok: false, error: 'Missing or invalid "mode" field.' };
+  }
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { ok: false, error: 'Missing or empty "messages" array.' };
+  }
+  if (messages.length > MAX_MESSAGES) {
+    return { ok: false, error: `Too many messages in conversation (max ${MAX_MESSAGES}).` };
+  }
+  for (const m of messages) {
+    if (typeof m !== 'object' || m === null) {
+      return { ok: false, error: 'Each message must be an object.' };
+    }
+    const { role, content } = m as Record<string, unknown>;
+    if (typeof role !== 'string' || !VALID_ROLES.has(role)) {
+      return { ok: false, error: 'Each message must have a valid "role".' };
+    }
+    if (typeof content !== 'string' || content.length === 0) {
+      return { ok: false, error: 'Each message must have non-empty "content".' };
+    }
+    if (content.length > MAX_MESSAGE_LENGTH) {
+      return { ok: false, error: `Message content exceeds the ${MAX_MESSAGE_LENGTH}-character limit.` };
+    }
+  }
+
+  return { ok: true, data: { messages: messages as ChatMessage[], system, mode } };
+}
+
+/**
+ * Structured, secret-free diagnostic log for chat failures. Never includes
+ * the Groq API key, chat content, or a full upstream response body.
+ */
+function logChatError(c: Context<AppEnv>, opts: { error: unknown; bodyValid: boolean }) {
+  const { error, bodyValid } = opts;
+  const apiKey = c.env.GROQ_API_KEY;
+  const entry: Record<string, unknown> = {
+    bodyValid,
+    sessionValid: !!c.get('user'),
+    hasApiKey: !!apiKey,
+    apiKeyLength: apiKey?.length ?? 0,
+    model: GROQ_MODEL
+  };
+
+  if (error instanceof GroqError) {
+    entry.category = error.category;
+    entry.status = error.status;
+    entry.requestId = error.requestId;
+    entry.message = error.message;
+  } else {
+    entry.category = 'unknown';
+    entry.message = error instanceof Error ? error.message : 'non-Error thrown';
+  }
+
+  console.error('[CHAT ERROR]', JSON.stringify(entry));
+}
+
+function chatErrorResponse(error: unknown): { body: { error: string }; status: 400 | 401 | 429 | 502 | 503 | 504 } {
+  if (error instanceof GroqError) {
+    switch (error.category) {
+      case 'missing_key':
+        return { body: { error: 'The assistant is not configured yet. Please contact an administrator.' }, status: 503 };
+      case 'timeout':
+        return { body: { error: 'The assistant took too long to respond. Please try again.' }, status: 504 };
+      case 'network':
+        return { body: { error: 'Could not reach the assistant. Please try again.' }, status: 502 };
+      case 'http_error':
+        if (error.status === 429) {
+          return { body: { error: 'The assistant is receiving too many requests right now. Please try again shortly.' }, status: 429 };
+        }
+        if (error.status === 401 || error.status === 403) {
+          return { body: { error: 'The assistant is not configured correctly. Please contact an administrator.' }, status: 503 };
+        }
+        return { body: { error: 'The assistant is temporarily unavailable. Please try again.' }, status: 502 };
+      case 'invalid_response':
+        return { body: { error: 'The assistant returned an unexpected response. Please try again.' }, status: 502 };
+    }
+  }
+  return { body: { error: 'The assistant is temporarily unavailable. Please try again.' }, status: 502 };
+}
+
 chatRoutes.post('/', requireAuth, blockIfPasswordChangeRequired, requireSameOrigin, async c => {
+  let bodyValid = false;
   try {
-    const { messages, system, mode } = (await c.req.json()) as { messages: ChatMessage[]; system: string; mode: string };
+    const rawBody = await c.req.json().catch(() => null);
+    const validation = validateChatRequest(rawBody);
+    if (!validation.ok) {
+      return c.json({ error: validation.error }, 400);
+    }
+    bodyValid = true;
+    const { messages, system, mode } = validation.data;
     const userContent = messages[messages.length - 1]?.content || '';
     const userMsgLower = userContent.toLowerCase();
 
@@ -78,7 +185,8 @@ chatRoutes.post('/', requireAuth, blockIfPasswordChangeRequired, requireSameOrig
     const text = await groqChatCompletion(c.env, [{ role: 'system', content: augmentedSystem }, ...messages]);
     return c.json({ text, intent: null, paymentData: null });
   } catch (e) {
-    console.error('[CHAT ERROR]', e instanceof Error ? e.name : 'unknown');
-    return c.json({ error: 'The assistant is temporarily unavailable. Please try again.' }, 500);
+    logChatError(c, { error: e, bodyValid });
+    const { body, status } = chatErrorResponse(e);
+    return c.json(body, status);
   }
 });

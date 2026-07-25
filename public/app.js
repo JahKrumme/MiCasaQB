@@ -190,18 +190,21 @@ function applyMode(mode) {
   const toggle = document.getElementById('mode-toggle');
   const h1 = document.querySelector('header h1');
   const sub = document.querySelector('header p');
+  const orgIndicator = document.getElementById('org-indicator');
   if (mode === 'access') {
     app.classList.add('access-mode');
     document.body.classList.add('access-mode');
     h1.textContent = 'Access QuickBooks Assistant';
     sub.textContent = 'Powered by Access Mental Health';
     toggle.textContent = 'Mi Casa';
+    orgIndicator.hidden = false;
   } else {
     app.classList.remove('access-mode');
     document.body.classList.remove('access-mode');
     h1.textContent = 'Mi Casa QuickBooks Assistant';
     sub.textContent = 'Powered by Mi Casa Care Homes';
     toggle.textContent = 'Access Mental Health';
+    orgIndicator.hidden = true;
   }
   history = [];
   messagesEl.innerHTML = '';
@@ -209,6 +212,44 @@ function applyMode(mode) {
     ? "Hi! I'm your Access Mental Health QuickBooks Assistant. Ask me any QuickBooks billing or bookkeeping question and I'll walk you through it step by step."
     : "Hi! I am your Mi Casa QuickBooks Assistant. Ask me how to record any transaction and I will walk you through it step by step.";
   addBubble('assistant', welcome);
+  renderSuggestedPrompts(mode);
+}
+
+const SUGGESTED_PROMPTS = {
+  micasa: [
+    "What's our monthly billing cycle?",
+    'How do I record a security deposit?',
+    'How do I handle a KanCare payment?'
+  ],
+  access: [
+    'How do I categorize a telehealth visit?',
+    "What's the billing cycle for insurance claims?",
+    'How do I record a copay?'
+  ]
+};
+
+function renderSuggestedPrompts(mode) {
+  clearSuggestedPrompts();
+  const wrap = document.createElement('div');
+  wrap.className = 'suggested-prompts';
+  wrap.id = 'suggested-prompts';
+  const label = document.createElement('p');
+  label.className = 'suggested-prompts-label';
+  label.textContent = 'Try asking:';
+  wrap.appendChild(label);
+  for (const prompt of SUGGESTED_PROMPTS[mode] || []) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'suggested-prompt-btn';
+    btn.textContent = prompt;
+    btn.addEventListener('click', () => triggerAction(prompt));
+    wrap.appendChild(btn);
+  }
+  messagesEl.appendChild(wrap);
+}
+
+function clearSuggestedPrompts() {
+  document.getElementById('suggested-prompts')?.remove();
 }
 
 document.getElementById('mode-toggle').addEventListener('click', () => {
@@ -232,10 +273,21 @@ function renderMarkdown(text) {
     .replace(/\n/g, '<br>');
 }
 
-function addBubble(role, text) {
+function addBubble(role, text, opts = {}) {
   const div = document.createElement('div');
   div.className = `bubble ${role}`;
   div.innerHTML = `<p>${renderMarkdown(text)}</p>`;
+  if (role === 'error' && opts.onRetry) {
+    const retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.className = 'bubble-retry-btn';
+    retryBtn.textContent = 'Retry';
+    retryBtn.addEventListener('click', () => {
+      retryBtn.disabled = true;
+      opts.onRetry();
+    });
+    div.appendChild(retryBtn);
+  }
   messagesEl.appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
   return div;
@@ -245,7 +297,8 @@ function showTyping() {
   const div = document.createElement('div');
   div.className = 'typing';
   div.id = 'typing-indicator';
-  div.innerHTML = '<span></span><span></span><span></span>';
+  div.setAttribute('role', 'status');
+  div.innerHTML = '<span class="visually-hidden">Mi Casa Assistant is typing…</span><span class="typing-dot" aria-hidden="true"></span><span class="typing-dot" aria-hidden="true"></span><span class="typing-dot" aria-hidden="true"></span>';
   messagesEl.appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
@@ -656,15 +709,30 @@ document.querySelectorAll('.quick-btn').forEach(btn => {
 
 // --- Main send flow ---
 
+function setSendingState(isSending) {
+  sendBtn.disabled = isSending;
+  inputEl.disabled = isSending;
+  sendBtn.textContent = isSending ? 'Sending…' : 'Send';
+  document.getElementById('input-row').setAttribute('aria-busy', String(isSending));
+}
+
 async function sendMessage() {
   const text = inputEl.value.trim();
   if (!text) return;
 
   inputEl.value = '';
   inputEl.style.height = 'auto';
-  sendBtn.disabled = true;
-
+  clearSuggestedPrompts();
   addBubble('user', text);
+  await attemptSend(text, null);
+}
+
+// Sends (or resends, on retry) one user message. `priorErrorBubble` is the
+// error bubble the retry button was clicked from, if any — removed once a
+// new attempt starts so failed retries don't stack up.
+async function attemptSend(text, priorErrorBubble) {
+  if (priorErrorBubble) priorErrorBubble.remove();
+  setSendingState(true);
   history.push({ role: 'user', content: text });
 
   showTyping();
@@ -687,8 +755,9 @@ async function sendMessage() {
 
     if (!res.ok) {
       const errMsg = data?.error?.message || data?.error || 'Something went wrong. Please try again.';
-      addBubble('error', errMsg);
       history.pop();
+      let bubble;
+      bubble = addBubble('error', errMsg, { onRetry: () => attemptSend(text, bubble) });
     } else if (data.intent && currentMode !== 'access') {
       if (data.intent === 'create-invoices') showInvoicePreview();
       else if (data.intent === 'record-payment') showPaymentCard(data.paymentData);
@@ -701,11 +770,14 @@ async function sendMessage() {
     }
   } catch (e) {
     removeTyping();
-    addBubble('error', 'Could not reach the server. Check your connection and try again.');
     history.pop();
+    let bubble;
+    bubble = addBubble('error', 'Could not reach the server. Check your connection and try again.', {
+      onRetry: () => attemptSend(text, bubble)
+    });
   }
 
-  sendBtn.disabled = false;
+  setSendingState(false);
   inputEl.focus();
 }
 

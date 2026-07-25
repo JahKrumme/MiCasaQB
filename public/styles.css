@@ -144,6 +144,46 @@ a { color: inherit; }
 }
 
 /* =========================================================
+   Shared logo classes — every logo image on the site uses one
+   of these instead of one-off inline/contextual sizing. Both
+   variants constrain only ONE dimension (never width+height
+   together) and use object-fit so the source aspect ratio is
+   always preserved, no matter how wide or narrow the mark is.
+   ========================================================= */
+
+.logo-full {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 220px;
+  max-height: 170px;
+  object-fit: contain;
+  margin: 0 auto 20px;
+}
+
+.logo-compact {
+  display: block;
+  width: auto;
+  height: auto;
+  max-height: 28px;
+  max-width: 130px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+/* Access Mental Health mark — only used where AMH context is explicit
+   (mode toggle, connection card), never in the primary app identity. */
+.logo-amh {
+  display: block;
+  width: auto;
+  height: auto;
+  max-height: 22px;
+  max-width: 110px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+/* =========================================================
    Chat assistant shell (index.html)
    ========================================================= */
 
@@ -231,7 +271,6 @@ header {
   color: inherit;
   border-radius: var(--radius-sm);
 }
-.header-brand img { width: 30px; height: 30px; display: block; flex-shrink: 0; }
 
 header h1 { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--hdr-title); letter-spacing: 0.01em; line-height: 1.2; }
 header p { font-family: var(--font-ui); font-size: 11.5px; color: var(--hdr-sub); margin-top: 1px; }
@@ -254,6 +293,15 @@ header p { font-family: var(--font-ui); font-size: 11.5px; color: var(--hdr-sub)
   padding: 4px 2px;
 }
 #header-actions a:hover, #header-actions button.link-btn:hover { color: var(--hdr-title); }
+
+.org-indicator {
+  display: flex;
+  align-items: center;
+  background: rgba(255,255,255,0.9);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+}
+.org-indicator[hidden] { display: none; }
 
 #mode-toggle, #install-btn {
   font-size: 11px;
@@ -318,10 +366,46 @@ header p { font-family: var(--font-ui); font-size: 11.5px; color: var(--hdr-sub)
 .bubble strong { font-weight: 600; }
 .bubble code { background: rgba(0,0,0,0.08); padding: 1px 5px; border-radius: 3px; font-size: 12.5px; font-family: 'SF Mono', 'Fira Code', monospace; }
 
+.bubble-retry-btn {
+  display: block;
+  margin-top: 10px;
+  background: none;
+  border: 1.5px solid var(--color-danger-text);
+  color: var(--color-danger-text);
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  min-height: 32px;
+  transition: background 0.15s;
+}
+.bubble-retry-btn:hover { background: rgba(155,0,0,0.08); }
+.bubble-retry-btn:disabled { opacity: 0.5; cursor: default; }
+
+.suggested-prompts { align-self: stretch; display: flex; flex-direction: column; gap: 8px; margin: 2px 0 4px; }
+.suggested-prompts-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); }
+.suggested-prompt-btn {
+  align-self: flex-start;
+  max-width: 100%;
+  text-align: left;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--primary);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.suggested-prompt-btn:hover { background: var(--color-surface-muted); border-color: var(--color-border-strong); }
+
 .typing { display: flex; align-items: center; gap: 6px; padding: 14px 18px; background: var(--asst-bubble); border-radius: 18px; border-bottom-left-radius: 4px; align-self: flex-start; box-shadow: var(--shadow-sm); }
-.typing span { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; animation: bounce 1.2s infinite; }
-.typing span:nth-child(2) { animation-delay: 0.2s; }
-.typing span:nth-child(3) { animation-delay: 0.4s; }
+.typing .typing-dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; animation: bounce 1.2s infinite; }
+.typing .typing-dot:nth-child(3) { animation-delay: 0.2s; }
+.typing .typing-dot:nth-child(4) { animation-delay: 0.4s; }
 @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 1; } 30% { transform: translateY(-7px); opacity: 0.7; } }
 
 .preview-card { align-self: flex-start; width: 100%; max-width: 100%; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 18px 20px; box-shadow: var(--shadow-md); }
@@ -366,9 +450,10 @@ header p { font-family: var(--font-ui); font-size: 11.5px; color: var(--hdr-sub)
 .quick-btn { background: var(--primary); color: var(--primary-text); border: none; border-radius: var(--radius-pill); padding: 9px 16px; font-size: 12.5px; font-weight: 600; font-family: inherit; white-space: nowrap; cursor: pointer; flex-shrink: 0; letter-spacing: 0.02em; transition: background 0.15s; min-height: 38px; }
 .quick-btn:hover { background: var(--primary-hover); }
 
-#access-notice { display: none; padding: 10px 16px; background: var(--quick-bg); border-top: 1px solid var(--border); font-size: 13px; color: var(--color-text-muted); flex-shrink: 0; text-align: center; font-style: italic; }
+#access-notice { display: none; align-items: center; justify-content: center; gap: 10px; padding: 10px 16px; background: var(--quick-bg); border-top: 1px solid var(--border); font-size: 13px; color: var(--color-text-muted); flex-shrink: 0; text-align: center; font-style: italic; }
+#access-notice .logo-amh { flex-shrink: 0; font-style: normal; }
 #app.access-mode #quick-actions { display: none; }
-#app.access-mode #access-notice { display: block; }
+#app.access-mode #access-notice { display: flex; }
 
 #input-row { background: var(--color-surface); border-top: 1px solid var(--border); padding: 12px 16px; display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0; }
 #user-input {
@@ -378,7 +463,8 @@ header p { font-family: var(--font-ui); font-size: 11.5px; color: var(--hdr-sub)
 }
 #user-input::placeholder { color: var(--color-text-faint); }
 #user-input:focus { border-color: var(--accent); background: #fff; }
-#send-btn { height: 42px; padding: 0 20px; border-radius: 22px; border: none; background: var(--primary); color: var(--primary-text); font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer; flex-shrink: 0; letter-spacing: 0.02em; transition: background 0.15s, opacity 0.15s; }
+#user-input:disabled { opacity: 0.6; cursor: default; }
+#send-btn { height: 42px; min-width: 76px; padding: 0 20px; border-radius: 22px; border: none; background: var(--primary); color: var(--primary-text); font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer; flex-shrink: 0; letter-spacing: 0.02em; transition: background 0.15s, opacity 0.15s; }
 #send-btn:hover { background: var(--primary-hover); }
 #send-btn:disabled { opacity: 0.4; cursor: default; }
 
@@ -412,14 +498,6 @@ body.static-page-body {
   width: 100%;
   text-align: center;
   box-shadow: var(--shadow-lg);
-}
-
-.static-logo {
-  width: 200px;
-  max-width: 100%;
-  height: auto;
-  margin: 0 auto 20px;
-  display: block;
 }
 
 .static-card h1 { font-family: var(--font-display); font-size: 21px; font-weight: 700; color: var(--color-brand-primary); margin-bottom: 6px; }
@@ -461,7 +539,6 @@ body.static-page-body {
 body.admin-body { align-items: flex-start; padding: 32px 16px; }
 .admin-page { width: 100%; max-width: 720px; margin: 0 auto; }
 .admin-header { background: var(--color-brand-primary); border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding: 18px 24px; display: flex; align-items: center; gap: 16px; }
-.admin-header .header-brand img { width: 26px; height: 26px; }
 .admin-header h1 { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--color-brand-secondary-light); flex: 1; }
 .admin-header a { color: rgba(255,255,255,0.65); text-decoration: none; font-size: 13px; }
 .admin-header a:hover { color: var(--color-brand-secondary-light); }
@@ -554,7 +631,6 @@ body.admin-body { align-items: flex-start; padding: 32px 16px; }
 /* Simple static text pages (terms, privacy) */
 .doc-page { max-width: 680px; margin: 0 auto; padding: 60px 24px 40px; color: #222; line-height: 1.7; font-family: var(--font-body); }
 .doc-page .header-brand { margin-bottom: 28px; }
-.doc-page .header-brand img { width: 32px; height: 32px; }
 .doc-page .header-brand .brand-lockup-text { font-size: 15px; color: var(--color-brand-primary); }
 .doc-page h1 { font-family: var(--font-display); font-size: 26px; margin-bottom: 8px; color: var(--color-brand-primary); }
 .doc-page hr { border: none; border-top: 1px solid var(--color-border); margin: 24px 0; }

@@ -191,12 +191,20 @@ function applyMode(mode) {
   const h1 = document.querySelector('header h1');
   const sub = document.querySelector('header p');
   const orgIndicator = document.getElementById('org-indicator');
+  const brandLogo = document.getElementById('brand-logo');
+  const orgLogo = document.getElementById('org-logo');
+  const brandLink = document.getElementById('header-brand-link');
   if (mode === 'access') {
     app.classList.add('access-mode');
     document.body.classList.add('access-mode');
     h1.textContent = 'Access QuickBooks Assistant';
     sub.textContent = 'Powered by Access Mental Health';
     toggle.textContent = 'Mi Casa';
+    brandLogo.src = '/assets/brand/access-mental-health-logo.png';
+    brandLogo.alt = 'Access Mental Health';
+    brandLink.setAttribute('aria-label', 'Access QuickBooks Assistant — go to dashboard');
+    orgLogo.src = '/assets/brand/mi-casa-icon-black.png';
+    orgLogo.alt = 'Mi Casa';
     orgIndicator.hidden = false;
   } else {
     app.classList.remove('access-mode');
@@ -204,6 +212,9 @@ function applyMode(mode) {
     h1.textContent = 'Mi Casa QuickBooks Assistant';
     sub.textContent = 'Powered by Mi Casa Care Homes';
     toggle.textContent = 'Access Mental Health';
+    brandLogo.src = '/assets/brand/mi-casa-icon-black.png';
+    brandLogo.alt = '';
+    brandLink.setAttribute('aria-label', 'Mi Casa QuickBooks Assistant — go to dashboard');
     orgIndicator.hidden = true;
   }
   history = [];

@@ -26,3 +26,13 @@ GROQ_API_KEY=your-groq-api-key
 
 # --- Shared secret GitHub Actions sends to trigger scheduled report jobs ---
 CRON_SECRET=REPLACE_WITH_RANDOM_SECRET
+
+# --- Mi Casa Operations Hub internal integration (optional) ---
+# Verifies the Hub's signed service assertions on /internal/* routes
+# (src/middleware/internalAuth.ts). The app boots and works standalone
+# without this set — those routes just refuse (503) until it's configured.
+# Must match the Hub's own FINANCE_INTERNAL_SECRET
+# (MiCasaOpsHub/.dev.vars.example / `wrangler secret put`).
+# Generate with:
+#   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+FINANCE_INTERNAL_SECRET=REPLACE_WITH_RANDOM_SECRET

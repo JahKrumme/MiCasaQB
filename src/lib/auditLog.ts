@@ -12,7 +12,12 @@ export type AuditAction =
   | 'user_removed'
   | 'qbo_connected'
   | 'qbo_reconnected'
-  | 'qbo_disconnected';
+  | 'qbo_disconnected'
+  // Recorded from the Hub's Finance internal routes (src/routes/internal.ts)
+  // — the acting Hub user's email is not a QuickBooks Companion user id, so
+  // these use actor: null and put the email in metadata.hubUserEmail instead.
+  | 'finance_billing_setup_requested'
+  | 'finance_followup_resolved';
 
 export interface AuditActor {
   id: string;

@@ -219,6 +219,7 @@ required to run the suite.
 | `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` | secret | sending report emails via the Gmail API |
 | `GROQ_API_KEY` | secret | conversational fallback in `/api/chat` |
 | `CRON_SECRET` | secret | shared secret GitHub Actions sends to authenticate scheduled `/api/cron/*` triggers |
+| `FINANCE_INTERNAL_SECRET` | secret, optional | verifies the Mi Casa Operations Hub's signed service assertions on `/internal/*` (see `src/middleware/internalAuth.ts`); unset means those routes just refuse (503) — the rest of the app is unaffected |
 | `INTUIT_ENVIRONMENT` | `wrangler.jsonc` var | `"sandbox"` or `"production"` |
 | `APP_BASE_URL` | `wrangler.jsonc` var | optional fixed hostname for OAuth redirect URIs; leave blank to derive from the request origin |
 

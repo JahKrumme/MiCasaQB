@@ -25,6 +25,7 @@ export function createTestEnv(overrides: Partial<Env> = {}): Env {
     GMAIL_REFRESH_TOKEN: 'test-gmail-refresh-token',
     GROQ_API_KEY: 'test-groq-key',
     CRON_SECRET: 'test-cron-secret',
+    FINANCE_INTERNAL_SECRET: 'test-finance-internal-secret',
     ...overrides
   };
 }

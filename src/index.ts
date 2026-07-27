@@ -8,6 +8,7 @@ import { chatRoutes } from './routes/chat';
 import { adminRoutes } from './routes/admin';
 import { invitationRoutes } from './routes/invitations';
 import { cronRoutes } from './routes/cron';
+import { internalRoutes } from './routes/internal';
 
 const app = new Hono<AppEnv>();
 
@@ -37,6 +38,11 @@ app.route('/api/chat', chatRoutes);
 app.route('/api/admin', adminRoutes);
 app.route('/api/invitations', invitationRoutes);
 app.route('/api/cron', cronRoutes);
+// Called by the Mi Casa Operations Hub via the FINANCE Service Binding —
+// not part of the staff-facing /api/* surface, protected by a signed
+// service assertion instead of a session cookie (see
+// src/middleware/internalAuth.ts).
+app.route('/internal', internalRoutes);
 
 app.notFound(c => c.json({ error: 'Not found' }, 404));
 

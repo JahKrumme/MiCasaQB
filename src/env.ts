@@ -20,4 +20,10 @@ export interface Env {
   GMAIL_REFRESH_TOKEN?: string;
   GROQ_API_KEY?: string;
   CRON_SECRET?: string;
+  // Verifies the Mi Casa Operations Hub's signed service assertions on
+  // /internal/* (src/middleware/internalAuth.ts). Optional so this app still
+  // boots and works standalone with it unset — those routes simply refuse
+  // (503) until it's configured. Must match the Hub's own
+  // FINANCE_INTERNAL_SECRET.
+  FINANCE_INTERNAL_SECRET?: string;
 }

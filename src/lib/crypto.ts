@@ -120,3 +120,44 @@ export function randomToken(byteLength = 32): string {
   const bytes = crypto.getRandomValues(new Uint8Array(byteLength));
   return bytesToBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
+
+/** Base64url (no padding) — used to decode the Hub's signed service assertions (see src/lib/serviceAssertion.ts). */
+export function fromBase64Url(value: string): Uint8Array {
+  const padded = value.length % 4 === 0 ? value : value + '='.repeat(4 - (value.length % 4));
+  return base64ToBytes(padded.replace(/-/g, '+').replace(/_/g, '/'));
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  if (!/^[0-9a-f]*$/i.test(hex) || hex.length % 2 !== 0) {
+    throw new Error('Invalid hex string');
+  }
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return bytes;
+}
+
+async function importHmacKey(secret: string): Promise<CryptoKey> {
+  const bytes = new TextEncoder().encode(secret);
+  return crypto.subtle.importKey('raw', bytes as BufferSource, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+}
+
+/**
+ * Verifies an HMAC-SHA256 hex digest against `message` — verify-only, since
+ * this app only ever *validates* assertions the Hub signed, never signs its
+ * own. Uses crypto.subtle.verify (constant-time) rather than a manual
+ * byte compare.
+ */
+export async function hmacVerifyHex(secret: string, message: string, hexSignature: string): Promise<boolean> {
+  try {
+    const key = await importHmacKey(secret);
+    const signatureBytes = hexToBytes(hexSignature);
+    return await crypto.subtle.verify(
+      'HMAC',
+      key,
+      signatureBytes as BufferSource,
+      new TextEncoder().encode(message) as BufferSource
+    );
+  } catch {
+    return false;
+  }
+}

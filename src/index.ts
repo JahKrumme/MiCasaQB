@@ -18,6 +18,18 @@ app.use('*', securityHeaders);
 // /health debug page, which leaked token prefixes and Supabase errors.
 app.get('/api/health', c => c.json({ status: 'ok' }));
 
+// Unauthenticated app-version check used by the in-app update control and the
+// service worker. Deliberately exposes nothing beyond a build identifier —
+// no secrets, env vars, paths, or DB state — and is never cached so a client
+// always sees what's actually deployed right now.
+app.get('/api/version', c => {
+  c.header('Cache-Control', 'no-store');
+  return c.json({
+    version: c.env.APP_VERSION || 'dev',
+    builtAt: c.env.APP_BUILT_AT || null
+  });
+});
+
 app.route('/api/auth', authRoutes);
 app.route('/api/qbo', qboRoutes);
 app.route('/api/qbo', qboApiRoutes);

@@ -24,6 +24,11 @@
 		// Optional: pin the public hostname used to build OAuth redirect/callback URLs.
 		// Leave blank ("") to derive it from the incoming request's own origin, which
 		// lets a *.workers.dev URL work before the custom domain is connected.
-		"APP_BASE_URL": "https://qb-assistant.elijahkrumme.workers.dev"
+		"APP_BASE_URL": "https://qb-assistant.elijahkrumme.workers.dev",
+		// Overridden per-deploy by the GitHub Actions workflow via
+		// `wrangler deploy --var APP_VERSION:<short-sha> APP_BUILT_AT:<iso-timestamp>`.
+		// These defaults only apply to local `wrangler dev` / manual deploys.
+		"APP_VERSION": "dev",
+		"APP_BUILT_AT": ""
 	}
 }

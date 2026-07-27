@@ -1,0 +1,42 @@
+# Cache-control for Cloudflare Workers Static Assets.
+#
+# The service-worker file, the manifest, and every HTML navigation document
+# must never be served stale from the browser's HTTP cache — that's on top
+# of (not instead of) the service-worker's own cache-busting, since the
+# browser has to fetch a byte-fresh sw.js before it can even notice a new
+# worker exists. Everything else (icons, CSS, JS) keeps Cloudflare's default
+# `public, max-age=0, must-revalidate`, which already forces an ETag
+# revalidation on every load.
+
+/sw.js
+  Cache-Control: no-store
+
+/manifest.webmanifest
+  Cache-Control: no-store
+
+/
+  Cache-Control: no-store
+
+/index.html
+  Cache-Control: no-store
+
+/login.html
+  Cache-Control: no-store
+
+/admin.html
+  Cache-Control: no-store
+
+/invite.html
+  Cache-Control: no-store
+
+/change-password.html
+  Cache-Control: no-store
+
+/terms.html
+  Cache-Control: no-store
+
+/privacy.html
+  Cache-Control: no-store
+
+/offline.html
+  Cache-Control: no-store

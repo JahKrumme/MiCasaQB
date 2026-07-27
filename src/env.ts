@@ -5,6 +5,10 @@ export interface Env {
   // Non-secret vars (wrangler.jsonc)
   INTUIT_ENVIRONMENT: string;
   APP_BASE_URL: string;
+  // Stamped at deploy time (short git SHA / ISO build timestamp). Falls back
+  // to "dev" locally so wrangler dev / tests don't need them set.
+  APP_VERSION: string;
+  APP_BUILT_AT: string;
 
   // Secrets (wrangler secret put ...)
   INTUIT_CLIENT_ID: string;

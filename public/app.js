@@ -101,6 +101,16 @@ const bannerEl = document.getElementById('banner');
 let history = [];
 let currentMode = sessionStorage.getItem('qb-mode') || 'micasa';
 
+// --- Unsaved-work guard (used by update.js before reloading for an update) ---
+
+function hasUnsavedWork() {
+  if (inputEl.value.trim().length > 0) return true;
+  if (document.querySelector('.payment-form')) return true;
+  if (document.querySelector('.preview-actions .btn-confirm')) return true;
+  return false;
+}
+window.__hasUnsavedWork = hasUnsavedWork;
+
 // --- Auth guard ---
 
 async function requireSession() {

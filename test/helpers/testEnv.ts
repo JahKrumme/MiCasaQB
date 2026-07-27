@@ -14,6 +14,8 @@ export function createTestEnv(overrides: Partial<Env> = {}): Env {
     ASSETS: { fetch: async () => new Response('not found', { status: 404 }) } as unknown as Fetcher,
     INTUIT_ENVIRONMENT: 'sandbox',
     APP_BASE_URL: 'https://test.example.com',
+    APP_VERSION: 'test-version',
+    APP_BUILT_AT: '2026-01-01T00:00:00.000Z',
     INTUIT_CLIENT_ID: 'test-client-id',
     INTUIT_CLIENT_SECRET: 'test-client-secret',
     TOKEN_ENCRYPTION_KEY: randomBase64(32),

@@ -1,0 +1,77 @@
+name: Deploy to Cloudflare
+
+# Production deploys only. Runs on pushes to the default branch (main) and
+# on manual dispatch — NEVER on pull_request, so a PR from any branch/fork
+# can't push straight to production. Every check below must pass before the
+# deploy step runs; GitHub Actions stops a job at the first failing step, so
+# a failing typecheck/lint/test/build simply never reaches `wrangler deploy`.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+# Deploys never overlap (a slow deploy in flight is never canceled mid-way
+# by a newer push — it queues instead).
+concurrency:
+  group: cloudflare-production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Typecheck, lint, test, build, deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Compute build version
+        id: version
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp service-worker build version
+        run: node scripts/stamp-build-version.mjs "${{ steps.version.outputs.sha }}"
+
+      # Only reached if every check above passed. Vars are injected at
+      # deploy time via --var so the git SHA never needs to be committed to
+      # wrangler.jsonc; --keep-vars preserves any vars set outside this repo
+      # (e.g. via the dashboard) that aren't listed here. This step never
+      # touches `wrangler secret` — existing Worker secrets (Intuit, Gmail,
+      # Groq, session, encryption, cron) and the D1 binding are untouched by
+      # a deploy and are preserved automatically.
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            deploy --keep-vars
+            --var APP_VERSION:${{ steps.version.outputs.sha }}
+            --var APP_BUILT_AT:${{ steps.version.outputs.built_at }}

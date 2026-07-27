@@ -99,7 +99,7 @@ const sendBtn = document.getElementById('send-btn');
 const bannerEl = document.getElementById('banner');
 
 let history = [];
-let currentMode = sessionStorage.getItem('qb-mode') || 'micasa';
+let currentMode = 'micasa'; // set for real by applyMode(MCHeader.getMode()) below
 
 // --- Unsaved-work guard (used by update.js before reloading for an update) ---
 
@@ -111,7 +111,7 @@ function hasUnsavedWork() {
 }
 window.__hasUnsavedWork = hasUnsavedWork;
 
-// --- Auth guard ---
+// --- Auth guard + shared header mount ---
 
 async function requireSession() {
   try {
@@ -125,21 +125,13 @@ async function requireSession() {
       window.location.href = '/change-password.html';
       return;
     }
-    // Only admins manage the org-wide QuickBooks connection and staff access.
-    if (data.isAdmin) {
-      document.getElementById('reconnect-btn').hidden = false;
-      document.getElementById('admin-link').hidden = false;
-    }
+    window.MCTheme?.reconcileWithServer(data.themePreference);
+    window.MCHeader.mount(data);
   } catch {
     window.location.href = '/login.html';
   }
 }
 requireSession();
-
-document.getElementById('signout-btn').addEventListener('click', async () => {
-  await fetch('/api/auth/logout', { method: 'POST' });
-  window.location.href = '/login.html';
-});
 
 // --- QuickBooks connect result banner ---
 
@@ -166,67 +158,33 @@ function showBanner(text, type) {
   }
 })();
 
-// --- PWA install prompt ---
+// --- PWA install prompt (menu item lives in the shared header's account menu) ---
 
 let deferredInstallPrompt = null;
-const installBtn = document.getElementById('install-btn');
 
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   deferredInstallPrompt = e;
-  installBtn.hidden = false;
+  window.MCHeader.setInstallAvailable(async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    window.MCHeader.hideInstall();
+  });
 });
 
-installBtn.addEventListener('click', async () => {
-  if (!deferredInstallPrompt) return;
-  deferredInstallPrompt.prompt();
-  await deferredInstallPrompt.userChoice;
-  deferredInstallPrompt = null;
-  installBtn.hidden = true;
-});
-
-window.addEventListener('appinstalled', () => { installBtn.hidden = true; });
+window.addEventListener('appinstalled', () => window.MCHeader.hideInstall());
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 }
 
-// --- Mode toggle ---
+// --- Mode / organization switching (branding itself is owned by header.js;
+// this only resets the chat content for the newly active organization) ---
 
 function applyMode(mode) {
   currentMode = mode;
-  sessionStorage.setItem('qb-mode', mode);
-  const app = document.getElementById('app');
-  const toggle = document.getElementById('mode-toggle');
-  const h1 = document.querySelector('header h1');
-  const sub = document.querySelector('header p');
-  const orgIndicator = document.getElementById('org-indicator');
-  const brandLogo = document.getElementById('brand-logo');
-  const orgLogo = document.getElementById('org-logo');
-  const brandLink = document.getElementById('header-brand-link');
-  if (mode === 'access') {
-    app.classList.add('access-mode');
-    document.body.classList.add('access-mode');
-    h1.textContent = 'Access QuickBooks Assistant';
-    sub.textContent = 'Powered by Access Mental Health';
-    toggle.textContent = 'Mi Casa';
-    brandLogo.src = '/assets/brand/access-mental-health-logo.png';
-    brandLogo.alt = 'Access Mental Health';
-    brandLink.setAttribute('aria-label', 'Access QuickBooks Assistant — go to dashboard');
-    orgLogo.src = '/assets/brand/mi-casa-icon-black.png';
-    orgLogo.alt = 'Mi Casa';
-    orgIndicator.hidden = false;
-  } else {
-    app.classList.remove('access-mode');
-    document.body.classList.remove('access-mode');
-    h1.textContent = 'Mi Casa QuickBooks Assistant';
-    sub.textContent = 'Powered by Mi Casa Care Homes';
-    toggle.textContent = 'Access Mental Health';
-    brandLogo.src = '/assets/brand/mi-casa-icon-black.png';
-    brandLogo.alt = '';
-    brandLink.setAttribute('aria-label', 'Mi Casa QuickBooks Assistant — go to dashboard');
-    orgIndicator.hidden = true;
-  }
   history = [];
   messagesEl.innerHTML = '';
   const welcome = mode === 'access'
@@ -235,6 +193,8 @@ function applyMode(mode) {
   addBubble('assistant', welcome);
   renderSuggestedPrompts(mode);
 }
+
+window.addEventListener('mc-org-change', e => applyMode(e.detail.mode));
 
 const SUGGESTED_PROMPTS = {
   micasa: [
@@ -272,10 +232,6 @@ function renderSuggestedPrompts(mode) {
 function clearSuggestedPrompts() {
   document.getElementById('suggested-prompts')?.remove();
 }
-
-document.getElementById('mode-toggle').addEventListener('click', () => {
-  applyMode(currentMode === 'micasa' ? 'access' : 'micasa');
-});
 
 const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2 });
 
@@ -816,5 +772,5 @@ inputEl.addEventListener('keydown', e => {
 
 sendBtn.addEventListener('click', sendMessage);
 
-applyMode(currentMode);
+applyMode(MCHeader.getMode());
 inputEl.focus();

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script src="/theme.js"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mi Casa QuickBooks Assistant</title>
@@ -18,58 +19,33 @@
 <body class="chat-body">
 
 <div id="app">
-  <header>
-    <a href="/" id="header-brand-link" class="header-brand" aria-label="Mi Casa QuickBooks Assistant — go to dashboard">
-      <img id="brand-logo" class="logo-compact" src="/assets/brand/mi-casa-icon-black.png" alt="" aria-hidden="true">
-      <span>
-        <h1>Mi Casa QuickBooks Assistant</h1>
-        <p>Powered by Mi Casa Care Homes</p>
-      </span>
-    </a>
-    <div id="header-actions">
-      <button id="install-btn" hidden>Install App</button>
-      <div id="update-widget" class="update-widget" data-state="idle">
-        <button id="update-btn" class="update-btn" type="button">
-          <svg class="update-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-            <path d="M13.5 8a5.5 5.5 0 1 1-1.75-4.02" />
-            <path d="M13.5 2.5v3.6h-3.6" />
-          </svg>
-          <span id="update-btn-label">Check for Updates</span>
-        </button>
-        <span id="update-status" class="update-status" role="status" aria-live="polite"></span>
-      </div>
-      <span id="org-indicator" class="org-indicator" hidden>
-        <img id="org-logo" class="logo-badge" src="/assets/brand/mi-casa-icon-black.png" alt="Mi Casa">
-      </span>
-      <button id="mode-toggle">Access Mental Health</button>
-      <a href="/api/qbo/connect" id="reconnect-btn" hidden>Reconnect</a>
-      <a href="/admin.html" id="admin-link" hidden>Admin</a>
-      <button class="link-btn" id="signout-btn">Sign out</button>
-    </div>
-  </header>
+  <div id="app-header-root"></div>
 
   <div id="banner" hidden role="status"></div>
 
-  <div id="messages" role="log" aria-live="polite" aria-label="Conversation with the Mi Casa QuickBooks Assistant"></div>
+  <main class="chat-shell app-shell">
+    <div id="messages" role="log" aria-live="polite" aria-label="Conversation with the QuickBooks Assistant"></div>
 
-  <div id="access-notice">
-    <img class="logo-amh" src="/assets/brand/access-mental-health-logo.png" alt="Access Mental Health">
-    <span>QuickBooks automation for Access Mental Health is coming soon. For now, ask me any QuickBooks how-to question.</span>
-  </div>
+    <div id="access-notice">
+      <span>QuickBooks automation for Access Mental Health is coming soon. For now, ask me any QuickBooks how-to question.</span>
+    </div>
 
-  <div id="quick-actions">
-    <button class="quick-btn" data-action="create invoices">Create Invoices</button>
-    <button class="quick-btn" data-action="record a payment">Record Payment</button>
-    <button class="quick-btn" data-action="add a new resident">Add Resident</button>
-    <button class="quick-btn" data-action="show overdue invoices">Overdue Invoices</button>
-  </div>
+    <div id="quick-actions">
+      <button class="quick-btn" data-action="create invoices">Create Invoices</button>
+      <button class="quick-btn" data-action="record a payment">Record Payment</button>
+      <button class="quick-btn" data-action="add a new resident">Add Resident</button>
+      <button class="quick-btn" data-action="show overdue invoices">Overdue Invoices</button>
+    </div>
 
-  <div id="input-row">
-    <textarea id="user-input" rows="1" placeholder="Ask about recording a transaction…" aria-label="Message to the Mi Casa QuickBooks Assistant"></textarea>
-    <button id="send-btn" aria-label="Send message">Send</button>
-  </div>
+    <div id="input-row">
+      <textarea id="user-input" rows="1" placeholder="Ask about recording a transaction…" aria-label="Message to the QuickBooks Assistant"></textarea>
+      <button id="send-btn" aria-label="Send message">Send</button>
+    </div>
+  </main>
 </div>
 
+<script src="/qbo-status.js"></script>
+<script src="/header.js"></script>
 <script src="/app.js"></script>
 <script type="module" src="/update.js"></script>
 </body>

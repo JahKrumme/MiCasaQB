@@ -8,6 +8,13 @@ export function isRole(value: unknown): value is Role {
   return typeof value === 'string' && (ROLES as string[]).includes(value);
 }
 
+export type ThemePreference = 'system' | 'light' | 'dark';
+export const THEME_PREFERENCES: ThemePreference[] = ['system', 'light', 'dark'];
+
+export function isThemePreference(value: unknown): value is ThemePreference {
+  return typeof value === 'string' && (THEME_PREFERENCES as string[]).includes(value);
+}
+
 export interface User {
   id: string;
   email: string;
@@ -15,6 +22,7 @@ export interface User {
   isAdmin: boolean; // derived: role === 'admin'
   disabled: boolean;
   forcePasswordChange: boolean;
+  themePreference: ThemePreference;
   createdAt: number;
   updatedAt: number;
 }
@@ -28,6 +36,7 @@ interface UserRow {
   role: string;
   disabled: number;
   force_password_change: number;
+  theme_preference: string;
   created_at: number;
   updated_at: number;
 }
@@ -41,6 +50,7 @@ function toUser(row: UserRow): User {
     isAdmin: role === 'admin',
     disabled: row.disabled === 1,
     forcePasswordChange: row.force_password_change === 1,
+    themePreference: isThemePreference(row.theme_preference) ? row.theme_preference : 'system',
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -72,6 +82,7 @@ export async function verifyCredentials(env: Env, email: string, password: strin
     role: found.role,
     isAdmin: found.isAdmin,
     disabled: found.disabled,
+    themePreference: found.themePreference,
     forcePasswordChange: found.forcePasswordChange,
     createdAt: found.createdAt,
     updatedAt: found.updatedAt
@@ -103,6 +114,7 @@ export async function createUser(
     isAdmin: role === 'admin',
     disabled: false,
     forcePasswordChange: !!options.forcePasswordChange,
+    themePreference: 'system',
     createdAt: now,
     updatedAt: now
   };
@@ -134,7 +146,17 @@ export async function upsertAdminUser(
       .bind(id, normalizedEmail, hash, salt, iterations, role, now, now)
       .run();
     return {
-      user: { id, email: normalizedEmail, role, isAdmin, disabled: false, forcePasswordChange: false, createdAt: now, updatedAt: now },
+      user: {
+        id,
+        email: normalizedEmail,
+        role,
+        isAdmin,
+        disabled: false,
+        forcePasswordChange: false,
+        themePreference: 'system',
+        createdAt: now,
+        updatedAt: now
+      },
       created: true
     };
   }
@@ -153,6 +175,7 @@ export async function upsertAdminUser(
       isAdmin,
       disabled: false,
       forcePasswordChange: false,
+      themePreference: existing.themePreference,
       createdAt: existing.createdAt,
       updatedAt: now
     },
@@ -174,6 +197,11 @@ export async function deleteUser(env: Env, userId: string): Promise<void> {
 
 export async function setUserRole(env: Env, userId: string, role: Role): Promise<void> {
   await env.DB.prepare(`UPDATE users SET role = ?, updated_at = ? WHERE id = ?`).bind(role, Date.now(), userId).run();
+}
+
+/** Self-service Appearance preference — every authenticated user sets their own, not just admins. */
+export async function setThemePreference(env: Env, userId: string, theme: ThemePreference): Promise<void> {
+  await env.DB.prepare(`UPDATE users SET theme_preference = ?, updated_at = ? WHERE id = ?`).bind(theme, Date.now(), userId).run();
 }
 
 /** Disabling also revokes all of the user's existing sessions immediately. */

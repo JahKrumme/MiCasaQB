@@ -34,6 +34,9 @@ const APP_SHELL = [
   '/styles.css',
   '/app.js',
   '/update.js',
+  '/theme.js',
+  '/header.js',
+  '/qbo-status.js',
   '/login.js',
   '/admin.js',
   '/invite.js',
@@ -52,7 +55,8 @@ const APP_SHELL = [
   '/assets/brand/mi-casa-logo-full-white.png',
   '/assets/brand/mi-casa-icon-black.png',
   '/assets/brand/mi-casa-icon-white.png',
-  '/assets/brand/access-mental-health-logo.png'
+  '/assets/brand/access-mental-health-logo.png',
+  '/assets/brand/access-mental-health-logo-dark.png'
 ];
 
 self.addEventListener('install', event => {

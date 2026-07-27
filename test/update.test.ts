@@ -13,18 +13,23 @@ function fakeWorker() {
 
 function makeDeps(overrides: Partial<Parameters<typeof createUpdateController>[0]> = {}) {
   const states: string[] = [];
+  const contexts: Array<{ loadedVersion: string | null; serverVersion: string | null; lastCheckedAt: number | null }> = [];
   return {
     deps: {
       getRegistration: vi.fn(async () => null),
       fetchVersion: vi.fn(async () => 'v1'),
       postSkipWaiting: vi.fn(),
-      onStateChange: vi.fn((state: string) => states.push(state)),
+      onStateChange: vi.fn((state: string, context: (typeof contexts)[number]) => {
+        states.push(state);
+        contexts.push(context);
+      }),
       hasUnsavedWork: vi.fn(() => false),
       reload: vi.fn(),
       isOnline: vi.fn(() => true),
       ...overrides
     },
-    states
+    states,
+    contexts
   };
 }
 
@@ -72,6 +77,31 @@ describe('update controller — checking for updates', () => {
     await controller.checkForUpdate(); // establishes "loaded" version v1
     await controller.checkForUpdate(); // server now reports v2
 
+    expect(controller.getState()).toBe(UPDATE_STATES.AVAILABLE);
+  });
+
+  it('exposes loadedVersion, serverVersion, and lastCheckedAt for the Admin "Application Updates" display', async () => {
+    const { deps, contexts } = makeDeps({ fetchVersion: vi.fn(async () => 'abc123') });
+    const controller = createUpdateController(deps);
+
+    const before = Date.now();
+    await controller.checkForUpdate();
+
+    const finalContext = contexts.at(-1);
+    expect(finalContext?.loadedVersion).toBe('abc123');
+    expect(finalContext?.serverVersion).toBe('abc123');
+    expect(finalContext?.lastCheckedAt).toBeGreaterThanOrEqual(before);
+  });
+
+  it('still fetches the version endpoint even when a waiting worker is already found, so "latest deployed version" stays accurate', async () => {
+    const waiting = fakeWorker();
+    const registration = { update: vi.fn(async () => {}), waiting };
+    const { deps } = makeDeps({ getRegistration: vi.fn(async () => registration), fetchVersion: vi.fn(async () => 'v9') });
+    const controller = createUpdateController(deps);
+
+    await controller.checkForUpdate();
+
+    expect(deps.fetchVersion).toHaveBeenCalledTimes(1);
     expect(controller.getState()).toBe(UPDATE_STATES.AVAILABLE);
   });
 
@@ -194,5 +224,17 @@ describe('update.js source wiring (static checks — no DOM in this test env)', 
 
   it('never executes browser-only wiring when window/document are undefined (Node/vitest safety)', () => {
     expect(updateSource).toMatch(/typeof window !== 'undefined' && typeof document !== 'undefined'/);
+  });
+
+  it('dispatches mc-update-state so the header dot can react without the full widget existing', () => {
+    expect(updateSource).toMatch(/dispatchEvent\(new CustomEvent\('mc-update-state'/);
+  });
+
+  it('exposes window.MCUpdate for the Admin widget and other pages to drive checks', () => {
+    expect(updateSource).toMatch(/window\.MCUpdate = \{/);
+  });
+
+  it('renders the full widget UI only when its DOM elements exist (chat page has none today)', () => {
+    expect(updateSource).toMatch(/if \(!widget \|\| !btn \|\| !labelEl \|\| !statusEl\) return;/);
   });
 });

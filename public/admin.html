@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script src="/theme.js"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin — Mi Casa Care Homes</title>
@@ -9,37 +10,26 @@
   <link rel="shortcut icon" href="/favicon.ico">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#5D440B">
+  <meta name="theme-color" content="#ffffff">
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body class="static-page-body admin-body">
-<div class="admin-page">
-  <header class="admin-header">
-    <a href="/" class="header-brand" aria-label="Mi Casa QuickBooks Assistant — go to dashboard">
-      <img class="logo-compact" src="/assets/brand/mi-casa-icon-white.png" alt="" aria-hidden="true">
-      <span class="visually-hidden">Mi Casa QuickBooks Assistant</span>
-    </a>
-    <h1>Staff &amp; Connection Admin</h1>
-    <a href="/index.html">&larr; Back to Assistant</a>
-  </header>
-  <div class="admin-card">
+<body class="admin-body">
+<div id="app-header-root"></div>
 
-    <div class="admin-section">
-      <div class="admin-section-title">QuickBooks Connection</div>
-      <div class="qbo-status" id="qbo-status">
-        <div class="qbo-status-info">
-          <svg class="qbo-status-icon" id="qbo-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle></svg>
-          <span class="qbo-status-text">
-            <span class="qbo-status-label" id="qbo-status-label">Checking connection&hellip;</span>
-            <span class="qbo-status-detail" id="qbo-status-detail"></span>
-          </span>
-        </div>
-        <div class="qbo-status-actions" id="qbo-status-actions"></div>
-      </div>
+<div class="admin-shell app-shell">
+  <div class="admin-intro">
+    <h1>Admin</h1>
+    <p>Manage staff access, the QuickBooks connection, and application settings.</p>
+  </div>
+
+  <section class="admin-section-card" aria-labelledby="admin-users-heading">
+    <div class="admin-section-head">
+      <h2 id="admin-users-heading">Users &amp; Invitations</h2>
+      <p class="admin-section-desc">Invite staff, manage roles, and review pending invitations.</p>
     </div>
 
-    <div class="admin-section">
-      <div class="admin-section-title">Invite a Staff Member</div>
+    <div class="admin-subsection">
+      <div class="admin-subsection-title">Invite a Staff Member</div>
       <div class="add-row">
         <label for="invite-email">Email</label>
         <input type="email" id="invite-email" placeholder="name@example.com">
@@ -54,31 +44,157 @@
       <div id="invite-toast"></div>
     </div>
 
-    <div class="admin-section">
-      <div class="admin-section-title">Pending Invitations</div>
-      <div class="table-scroll"><table class="admin-table"><tbody id="invitation-list"><tr><td class="empty">Loading&hellip;</td></tr></tbody></table></div>
+    <div class="admin-subsection">
+      <div class="admin-subsection-title">Pending Invitations</div>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead><tr><th>Email</th><th>Status</th><th></th></tr></thead>
+          <tbody id="invitation-list"><tr><td class="empty">Loading&hellip;</td></tr></tbody>
+        </table>
+      </div>
     </div>
 
-    <div class="admin-section">
-      <div class="admin-section-title">Staff Accounts</div>
-      <div class="table-scroll"><table class="admin-table"><tbody id="user-list"><tr><td class="empty">Loading&hellip;</td></tr></tbody></table></div>
+    <div class="admin-subsection">
+      <div class="admin-subsection-title">Staff Accounts</div>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead><tr><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+          <tbody id="user-list"><tr><td class="empty">Loading&hellip;</td></tr></tbody>
+        </table>
+      </div>
       <div id="toast"></div>
     </div>
+  </section>
 
-    <div class="admin-section">
-      <div class="admin-section-title">Email Delivery</div>
+  <section class="admin-section-card" aria-labelledby="admin-roles-heading">
+    <div class="admin-section-head">
+      <h2 id="admin-roles-heading">Roles &amp; Access</h2>
+      <p class="admin-section-desc">What each role can do. Change a person's role from the Staff Accounts table above.</p>
+    </div>
+    <div class="role-reference">
+      <div class="role-reference-item">
+        <h3>Admin</h3>
+        <p>Full access — manages staff, roles, invitations, and the QuickBooks connection.</p>
+      </div>
+      <div class="role-reference-item">
+        <h3>Staff</h3>
+        <p>Normal assistant &amp; reporting features — create invoices, record payments, add residents.</p>
+      </div>
+      <div class="role-reference-item">
+        <h3>Read Only</h3>
+        <p>Can view reports and ask the assistant questions, but can't record transactions.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="admin-section-card" aria-labelledby="admin-qbo-heading">
+    <div class="admin-section-head">
+      <h2 id="admin-qbo-heading">QuickBooks Connection</h2>
+      <p class="admin-section-desc">The shared connection staff use to create invoices and record payments.</p>
+    </div>
+    <div class="qbo-status" id="qbo-status">
+      <div class="qbo-status-info">
+        <svg class="qbo-status-icon" id="qbo-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle></svg>
+        <span class="qbo-status-text">
+          <span class="qbo-status-label" id="qbo-status-label">Checking connection&hellip;</span>
+          <span class="qbo-status-detail" id="qbo-status-detail"></span>
+        </span>
+      </div>
+      <div class="qbo-status-actions" id="qbo-status-actions"></div>
+    </div>
+  </section>
+
+  <section class="admin-section-card" aria-labelledby="admin-email-heading">
+    <div class="admin-section-head">
+      <h2 id="admin-email-heading">Email &amp; Reminder Status</h2>
+      <p class="admin-section-desc">Gmail delivery and the scheduled billing reminders run from GitHub Actions.</p>
+    </div>
+
+    <div class="admin-subsection">
+      <div class="admin-subsection-title">Email Delivery</div>
       <p class="subtitle mb-12">Sends a real test email to your own account's address right now, using the Gmail integration.</p>
       <button class="btn-add" id="test-email-btn">Send Test Email</button>
       <div id="test-email-toast"></div>
     </div>
 
-    <div class="admin-section">
-      <div class="admin-section-title">Recent Activity</div>
-      <ul class="audit-list" id="audit-list"><li class="empty">Loading&hellip;</li></ul>
+    <div class="admin-subsection">
+      <div class="admin-subsection-title">Scheduled Reminders</div>
+      <ul class="reminder-list">
+        <li><span class="reminder-name">Daily Overdue Check</span><span class="reminder-schedule">Daily · 8:00 AM CST</span></li>
+        <li><span class="reminder-name">30-Day Overdue Alert</span><span class="reminder-schedule">Weekly · Monday 8:00 AM CST</span></li>
+        <li><span class="reminder-name">Monthly Invoices</span><span class="reminder-schedule">Monthly, via GitHub Actions</span></li>
+        <li><span class="reminder-name">KanCare Reminder</span><span class="reminder-schedule">Scheduled, via GitHub Actions</span></li>
+      </ul>
     </div>
+  </section>
 
-  </div>
+  <section class="admin-section-card" aria-labelledby="admin-updates-heading">
+    <div class="admin-section-head">
+      <h2 id="admin-updates-heading">Application Updates</h2>
+      <p class="admin-section-desc">Check what's deployed and install the latest version.</p>
+    </div>
+    <div id="update-widget" class="update-widget" data-state="idle">
+      <dl class="update-versions">
+        <div>
+          <dt>Current version</dt>
+          <dd id="update-current-version">—</dd>
+        </div>
+        <div>
+          <dt>Latest deployed version</dt>
+          <dd id="update-latest-version">—</dd>
+        </div>
+        <div>
+          <dt>Last checked</dt>
+          <dd id="update-last-checked">—</dd>
+        </div>
+      </dl>
+      <div class="update-controls">
+        <button id="update-btn" class="update-btn" type="button">
+          <svg class="update-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M13.5 8a5.5 5.5 0 1 1-1.75-4.02" />
+            <path d="M13.5 2.5v3.6h-3.6" />
+          </svg>
+          <span id="update-btn-label">Check for Updates</span>
+        </button>
+        <span id="update-status" class="update-status" role="status" aria-live="polite"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="admin-section-card" aria-labelledby="admin-appearance-heading">
+    <div class="admin-section-head">
+      <h2 id="admin-appearance-heading">Appearance</h2>
+      <p class="admin-section-desc">Applies immediately and is remembered on your account across devices.</p>
+    </div>
+    <fieldset class="theme-picker" id="theme-picker">
+      <legend class="visually-hidden">Theme</legend>
+      <span class="theme-option">
+        <input type="radio" name="theme" id="theme-system" value="system">
+        <label for="theme-system">System</label>
+      </span>
+      <span class="theme-option">
+        <input type="radio" name="theme" id="theme-light" value="light">
+        <label for="theme-light">Light</label>
+      </span>
+      <span class="theme-option">
+        <input type="radio" name="theme" id="theme-dark" value="dark">
+        <label for="theme-dark">Dark</label>
+      </span>
+    </fieldset>
+  </section>
+
+  <section class="admin-section-card" aria-labelledby="admin-activity-heading">
+    <div class="admin-section-head">
+      <h2 id="admin-activity-heading">Recent Activity</h2>
+      <p class="admin-section-desc">Admin and security-relevant actions.</p>
+    </div>
+    <ul class="audit-list" id="audit-list"><li class="empty">Loading&hellip;</li></ul>
+  </section>
 </div>
+
+<script src="/qbo-status.js"></script>
+<script src="/header.js"></script>
 <script src="/admin.js"></script>
+<script type="module" src="/update.js"></script>
 </body>
 </html>

@@ -5,10 +5,37 @@
     if (!data.authenticated) { window.location.href = '/login.html'; return; }
     if (data.forcePasswordChange) { window.location.href = '/change-password.html'; return; }
     if (!data.isAdmin) { window.location.href = '/index.html'; return; }
+    window.MCTheme?.reconcileWithServer(data.themePreference);
+    window.MCHeader.mount(data);
+    initAppearanceSection(data.themePreference);
   } catch {
     window.location.href = '/login.html';
   }
 })();
+
+// --- Appearance (theme) ---
+
+function initAppearanceSection(currentPreference) {
+  const radios = document.querySelectorAll('#theme-picker input[name="theme"]');
+  const initial = window.MCTheme ? window.MCTheme.get() : currentPreference || 'system';
+  radios.forEach(radio => {
+    radio.checked = radio.value === initial;
+    radio.addEventListener('change', async () => {
+      if (!radio.checked) return;
+      window.MCTheme?.set(radio.value);
+      try {
+        await fetch('/api/auth/theme', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ theme: radio.value })
+        });
+      } catch {
+        // The theme already applied locally via localStorage; a failed PUT
+        // just means it won't sync to other devices until the next change.
+      }
+    });
+  });
+}
 
 const ROLE_LABELS = { admin: 'Admin', staff: 'Staff', read_only: 'Read Only' };
 
@@ -102,51 +129,25 @@ function disconnectButton() {
   return btn;
 }
 
+// Classification (what /api/qbo/status means) lives in public/qbo-status.js,
+// shared with the compact header badge — this just adds the full-detail
+// icon + action buttons on top of that shared result.
 async function loadQboStatus() {
   setQboStatus({ state: 'refreshing', label: 'Checking connection…', icon: ICON_LOADING });
-  try {
-    const res = await fetch('/api/qbo/status');
-    const data = await res.json();
+  const status = await window.MCQboStatus.fetchQboStatus();
 
-    if (!data.connected) {
-      setQboStatus({
-        state: 'reconnect',
-        label: 'Not connected',
-        detail: 'Connect QuickBooks so staff can create invoices and record payments.',
-        icon: ICON_WARNING,
-        actions: [connectLink('Connect QuickBooks')]
-      });
-      return;
-    }
-
-    const refreshExpired = data.refreshTokenExpiresAt && data.refreshTokenExpiresAt < Date.now();
-    if (refreshExpired) {
-      setQboStatus({
-        state: 'reconnect',
-        label: 'Reconnection required',
-        detail: `QuickBooks access expired for realm ${data.realmId}.`,
-        icon: ICON_WARNING,
-        actions: [connectLink('Reconnect QuickBooks')]
-      });
-      return;
-    }
-
-    setQboStatus({
-      state: 'connected',
-      label: 'Connected',
-      detail: `Realm ${data.realmId} · ${data.environment}`,
-      icon: ICON_CHECK,
-      actions: [connectLink('Reconnect'), disconnectButton()]
-    });
-  } catch {
-    setQboStatus({
-      state: 'error',
-      label: 'Error checking connection',
-      detail: 'Could not reach the server. Try refreshing the page.',
-      icon: ICON_WARNING,
-      actions: [connectLink('Connect QuickBooks')]
-    });
+  if (status.state === 'error') {
+    setQboStatus({ state: 'error', label: status.label, detail: status.detail, icon: ICON_WARNING, actions: [connectLink('Connect QuickBooks')] });
+    return;
   }
+
+  if (status.state === 'reconnect') {
+    const label = status.label === 'Not connected' ? 'Connect QuickBooks' : 'Reconnect QuickBooks';
+    setQboStatus({ state: 'reconnect', label: status.label, detail: status.detail, icon: ICON_WARNING, actions: [connectLink(label)] });
+    return;
+  }
+
+  setQboStatus({ state: 'connected', label: status.label, detail: status.detail, icon: ICON_CHECK, actions: [connectLink('Reconnect'), disconnectButton()] });
 }
 
 async function loadUsersAndInvitations() {
@@ -347,6 +348,7 @@ async function resendInvitation(id) {
 }
 
 async function cancelInvitation(id) {
+  if (!confirm('Cancel this invitation? The invite link will stop working.')) return;
   try {
     await api(`/api/admin/invitations/${id}`, { method: 'DELETE' });
     showToast('invite-toast', 'Invitation cancelled.', 'success');
@@ -392,6 +394,7 @@ async function resetPassword(id) {
 }
 
 async function removeUser(id) {
+  if (!confirm('Remove this account? They will be signed out immediately and will need a new invitation to regain access.')) return;
   try {
     await api(`/api/admin/users/${id}`, { method: 'DELETE' });
     showToast('toast', 'Account removed.', 'success');

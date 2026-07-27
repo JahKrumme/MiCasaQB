@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 import { randomToken, sha256Hex } from './crypto';
-import { isRole, type User } from './users';
+import { isRole, isThemePreference, type User } from './users';
 
 export const SESSION_COOKIE = 'mc_session';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -30,7 +30,7 @@ export async function resolveSession(env: Env, token: string | undefined): Promi
   const tokenHash = await sha256Hex(token);
   const row = await env.DB.prepare(
     `SELECT u.id as id, u.email as email, u.role as role, u.disabled as disabled,
-            u.force_password_change as force_password_change,
+            u.force_password_change as force_password_change, u.theme_preference as theme_preference,
             u.created_at as created_at, u.updated_at as updated_at, s.expires_at as expires_at
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = ?`
@@ -42,6 +42,7 @@ export async function resolveSession(env: Env, token: string | undefined): Promi
       role: string;
       disabled: number;
       force_password_change: number;
+      theme_preference: string;
       created_at: number;
       updated_at: number;
       expires_at: number;
@@ -65,6 +66,7 @@ export async function resolveSession(env: Env, token: string | undefined): Promi
     isAdmin: role === 'admin',
     disabled: false,
     forcePasswordChange: row.force_password_change === 1,
+    themePreference: isThemePreference(row.theme_preference) ? row.theme_preference : 'system',
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };

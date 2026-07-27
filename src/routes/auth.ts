@@ -5,7 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { requireSameOrigin } from '../middleware/security';
 import { checkRateLimit } from '../lib/rateLimit';
 import { createSession, destroySession, resolveSession, SESSION_COOKIE } from '../lib/session';
-import { changeOwnPassword, verifyCredentials } from '../lib/users';
+import { changeOwnPassword, isThemePreference, setThemePreference, verifyCredentials } from '../lib/users';
 import { isHttpsRequest } from '../lib/baseUrl';
 
 export const authRoutes = new Hono<AppEnv>();
@@ -49,7 +49,8 @@ authRoutes.post('/login', requireSameOrigin, async c => {
     email: user.email,
     isAdmin: user.isAdmin,
     role: user.role,
-    forcePasswordChange: user.forcePasswordChange
+    forcePasswordChange: user.forcePasswordChange,
+    themePreference: user.themePreference
   });
 });
 
@@ -69,8 +70,30 @@ authRoutes.get('/session', async c => {
     email: user.email,
     isAdmin: user.isAdmin,
     role: user.role,
-    forcePasswordChange: user.forcePasswordChange
+    forcePasswordChange: user.forcePasswordChange,
+    themePreference: user.themePreference
   });
+});
+
+// Self-service Appearance preference — any authenticated user (not just
+// admins) sets their own theme. D1 is the durable cross-device value; the
+// client mirrors it into localStorage for the pre-paint theme script.
+authRoutes.put('/theme', requireAuth, requireSameOrigin, async c => {
+  const user = c.get('user')!;
+
+  let body: { theme?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid request body' }, 400);
+  }
+
+  if (!isThemePreference(body.theme)) {
+    return c.json({ error: 'theme must be one of: system, light, dark' }, 400);
+  }
+
+  await setThemePreference(c.env, user.id, body.theme);
+  return c.json({ success: true, theme: body.theme });
 });
 
 // Kept for symmetry with requireAuth-protected routes; not currently used by

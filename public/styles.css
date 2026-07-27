@@ -1,36 +1,37 @@
 /* =========================================================
-   Mi Casa design system — tokens
-   Colors and type sourced from the Mi Casa Care Homes brand
-   cheat sheet (brown/gold palette, Playfair Display headings).
+   Design tokens — light (default) + dark
+   Brand colors (brown/gold for Mi Casa, purple/mint for Access
+   Mental Health) are reserved for small accents only; everything
+   structural (surfaces, text, borders) is neutral so the shared
+   app shell and Admin never read as "belonging" to one org.
    ========================================================= */
 
 :root {
-  /* Brand colors */
-  --color-brand-primary: #5D440B;   /* brown dark — header/nav, primary buttons */
+  /* Brand accent colors — used sparingly (buttons, bubbles, switcher accents) */
+  --color-brand-primary: #5D440B;
   --color-brand-primary-hover: #7a5230;
-  --color-brand-secondary: #C9963A; /* gold — accents, on-brand text */
+  --color-brand-secondary: #C9963A;
   --color-brand-secondary-light: #F5EDD8;
 
-  /* Access Mental Health secondary org palette (mode toggle only) */
   --color-amh-primary: #7B6FA0;
   --color-amh-accent: #9E9FD8;
   --color-amh-mint: #C8DDD3;
   --color-amh-lightgray: #ECECEC;
   --color-amh-midgray: #A8A8A8;
 
-  /* Neutrals */
+  /* Neutral surfaces + text — these are what actually re-theme in dark mode */
   --color-cream: #FAF8F3;
   --color-cream-dark: #F0EBE0;
   --color-background: #FAF8F3;
   --color-surface: #FFFFFF;
   --color-surface-muted: #F5F0E8;
+  --color-input-bg: #FAF7F4;
   --color-text: #2A2422;
   --color-text-muted: #6b6058;
   --color-text-faint: #9a9086;
   --color-border: #e5dccb;
   --color-border-strong: #d6c9bc;
 
-  /* Focus + status */
   --color-focus: #C9963A;
   --color-success-bg: #f0fff4;
   --color-success-text: #2d6a2d;
@@ -42,24 +43,20 @@
   --color-danger-text: #9b0000;
   --color-danger-border: #f5c2c7;
 
-  /* Type */
   --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
   --font-body: Georgia, 'Times New Roman', serif;
   --font-ui: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 
-  /* Radius scale */
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 20px;
   --radius-pill: 999px;
 
-  /* Shadow scale — restrained, warm-tinted */
   --shadow-sm: 0 1px 3px rgba(61, 43, 15, 0.08);
   --shadow-md: 0 4px 16px rgba(61, 43, 15, 0.10);
   --shadow-lg: 0 8px 32px rgba(61, 43, 15, 0.14);
 
-  /* Spacing scale */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -67,6 +64,63 @@
   --space-5: 24px;
   --space-6: 32px;
   --space-7: 48px;
+
+  /* Shared shell grid — index.html narrows this for a comfortable reading
+     width (see body.chat-body below); admin.html uses the wide default so
+     tables have room. Header and content always read the same var, so they
+     can never end up misaligned. */
+  --shell-max: 1240px;
+  --shell-pad: 28px;
+}
+
+@media (max-width: 1024px) {
+  :root { --shell-pad: 22px; }
+}
+@media (max-width: 480px) {
+  :root { --shell-pad: 16px; }
+}
+
+/* True neutral dark mode — not an inversion. Charcoal surfaces with a
+   slightly lighter "raised" tone, muted borders, soft white primary text,
+   and status colors re-tuned to keep 4.5:1+ contrast on dark surfaces. */
+:root[data-theme="dark"] {
+  --color-brand-primary: #C9963A;
+  --color-brand-primary-hover: #E0B15A;
+  --color-brand-secondary: #E0B15A;
+  --color-brand-secondary-light: #3a2e12;
+
+  --color-amh-primary: #A79CD1;
+  --color-amh-accent: #9E9FD8;
+  --color-amh-mint: #7fa694;
+  --color-amh-lightgray: #2a2a30;
+  --color-amh-midgray: #8b8b93;
+
+  --color-cream: #17171a;
+  --color-cream-dark: #1c1c20;
+  --color-background: #17171a;
+  --color-surface: #1f1f24;
+  --color-surface-muted: #26262c;
+  --color-input-bg: #202024;
+  --color-text: #F2F1EE;
+  --color-text-muted: #ADAAA5;
+  --color-text-faint: #7c7975;
+  --color-border: #35353b;
+  --color-border-strong: #46464d;
+
+  --color-focus: #E0B15A;
+  --color-success-bg: rgba(56, 142, 60, 0.18);
+  --color-success-text: #7ed88a;
+  --color-success-border: #3f6b43;
+  --color-warning-bg: rgba(214, 158, 46, 0.16);
+  --color-warning-text: #e8c778;
+  --color-warning-border: #6b551f;
+  --color-danger-bg: rgba(200, 60, 60, 0.16);
+  --color-danger-text: #ff9a9a;
+  --color-danger-border: #6b2a2a;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -77,14 +131,13 @@ body {
   font-family: var(--font-ui);
   background: var(--color-background);
   color: var(--color-text);
+  transition: background-color 0.15s, color 0.15s;
 }
 
-/* Subtle warm paper grain — CSS-only, no image download. Two faint radial
-   dot layers at different scales, kept low-opacity so it reads as texture
-   rather than pattern. */
+/* Subtle warm paper grain — used only on the light-pinned marketing/auth
+   pages (see the light-pin block near the bottom of this file). */
 .textured-bg,
-body.static-page-body,
-body.admin-body {
+body.static-page-body {
   background-color: var(--color-background);
   background-image:
     radial-gradient(rgba(93, 68, 11, 0.05) 1px, transparent 1px),
@@ -120,35 +173,25 @@ a { color: inherit; }
   }
 }
 
-/* Reusable brand lockup (icon mark + wordmark), used in headers/nav. */
-.brand-lockup {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  text-decoration: none;
-  color: inherit;
-}
-.brand-lockup img { display: block; flex-shrink: 0; }
-.brand-lockup-text {
-  font-family: var(--font-display);
-  font-weight: 700;
-  line-height: 1.15;
-}
-.brand-lockup-text .brand-tagline {
-  display: block;
-  font-family: var(--font-ui);
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  opacity: 0.75;
+/* =========================================================
+   Shared shell grid — the one layout system both index.html
+   and admin.html build on, so the header is never wider or
+   narrower than the content below it.
+   ========================================================= */
+
+.app-shell {
+  width: 100%;
+  max-width: var(--shell-max);
+  margin-inline: auto;
+  padding-inline: var(--shell-pad);
+  box-sizing: border-box;
 }
 
 /* =========================================================
-   Shared logo classes — every logo image on the site uses one
-   of these instead of one-off inline/contextual sizing. Both
-   variants constrain only ONE dimension (never width+height
-   together) and use object-fit so the source aspect ratio is
-   always preserved, no matter how wide or narrow the mark is.
+   Shared logo classes — every logo image uses one of these
+   instead of one-off sizing. Both variants constrain only ONE
+   dimension (never width+height together) and use object-fit
+   so the source aspect ratio is always preserved.
    ========================================================= */
 
 .logo-full {
@@ -171,8 +214,6 @@ a { color: inherit; }
   flex-shrink: 0;
 }
 
-/* Access Mental Health mark — used as the primary header logo while in
-   Access mode, and elsewhere AMH context is explicit (connection card). */
 .logo-amh {
   display: block;
   width: auto;
@@ -183,16 +224,253 @@ a { color: inherit; }
   flex-shrink: 0;
 }
 
-/* Small secondary-brand badge — used in the header's org-indicator slot,
-   whichever brand mark it's showing as "also this org" context. */
-.logo-badge {
+/* The header's main brand mark — sized for the left zone, never in a pill. */
+.brand-logo {
   display: block;
   width: auto;
   height: auto;
-  max-height: 20px;
-  max-width: 100px;
+  max-height: 30px;
+  max-width: 150px;
   object-fit: contain;
   flex-shrink: 0;
+}
+
+/* =========================================================
+   Shared application header — 3 zones (brand / org switcher /
+   account actions), identical structure on index.html and
+   admin.html via public/header.js.
+   ========================================================= */
+
+.app-header {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.app-header-inner {
+  min-height: 64px;
+  display: grid;
+  /* The center (switcher) and right (status/account) zones are fixed,
+     predictable widths, so they get `auto` and never get squeezed. The
+     left zone (logo + title) absorbs whatever space is left and only
+     that zone truncates (via ellipsis) if it's ever genuinely tight. */
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding-block: 10px;
+}
+
+.header-zone-left { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+.header-zone-center { display: flex; justify-content: center; flex-shrink: 0; }
+.header-zone-right { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3); flex-shrink: 0; }
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+.brand-text { display: flex; flex-direction: column; min-width: 0; }
+.brand-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.brand-subtitle {
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Organization switcher — plain text buttons, compact, no logos. */
+.org-switcher {
+  display: flex;
+  align-items: center;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 3px;
+  gap: 2px;
+}
+.org-switch-btn {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  padding: 7px 14px;
+  height: 32px;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.org-switch-btn:hover { color: var(--color-text); }
+#org-switch-micasa.is-active {
+  background: rgba(93, 68, 11, 0.1);
+  border-color: var(--color-brand-primary);
+  color: var(--color-brand-primary);
+}
+#org-switch-access.is-active {
+  background: rgba(123, 111, 160, 0.14);
+  border-color: var(--color-amh-primary);
+  color: var(--color-amh-primary);
+}
+
+/* Compact QuickBooks connection-status badge (right zone). Reconnect only
+   renders for admins and only when reconnection is actually required. */
+.qbo-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 5px 10px 5px 8px;
+  white-space: nowrap;
+}
+.qbo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-text-faint); flex-shrink: 0; }
+.qbo-badge.is-connected { border-color: var(--color-success-border); color: var(--color-success-text); }
+.qbo-badge.is-connected .qbo-dot { background: var(--color-success-text); }
+.qbo-badge.is-reconnect,
+.qbo-badge.is-error { border-color: var(--color-danger-border); color: var(--color-danger-text); }
+.qbo-badge.is-reconnect .qbo-dot,
+.qbo-badge.is-error .qbo-dot { background: var(--color-danger-text); }
+.qbo-badge-action {
+  color: inherit;
+  text-decoration: underline;
+  font-weight: 700;
+  font-size: 12px;
+}
+.qbo-badge[hidden] { display: none; }
+
+/* Account menu — native <details>/<summary> for free keyboard support. */
+.account-menu { position: relative; }
+.account-menu-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  list-style: none;
+  position: relative;
+}
+.account-menu-trigger::-webkit-details-marker { display: none; }
+.account-avatar {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.update-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-brand-secondary);
+  border: 2px solid var(--color-surface);
+}
+.update-dot[hidden] { display: none; }
+
+.account-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 220px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 20;
+}
+.account-menu-email {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+.account-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--color-text);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  min-height: 40px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.account-menu-item:hover { background: var(--color-surface-muted); }
+.account-menu-item[hidden] { display: none; }
+.account-menu-signout { color: var(--color-danger-text); }
+
+/* Organization switch, mirrored inside the account menu for narrow
+   viewports (hidden here by default; shown at max-width: 480px below,
+   where the inline switcher in the header center zone gets hidden). */
+.account-menu-orgs { display: none; }
+.account-menu-org-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-faint); padding: 8px 10px 4px; }
+.account-menu-orgs .account-menu-item.is-active { color: var(--color-brand-primary); font-weight: 700; }
+
+@media (max-width: 768px) {
+  .brand-subtitle { display: none; }
+  .qbo-badge-label-text { display: none; }
+}
+
+@media (max-width: 640px) {
+  .org-switcher { padding: 2px; }
+  .org-switch-btn { padding: 6px 10px; font-size: 12px; }
+  .qbo-badge { display: none; }
+}
+
+@media (max-width: 480px) {
+  .header-zone-center { display: none; }
+  .account-menu-orgs {
+    display: block;
+    border-top: 1px solid var(--color-border);
+    margin-top: 4px;
+    padding-top: 4px;
+  }
+}
+
+@media (max-width: 400px) {
+  .brand-title { font-size: 15px; }
 }
 
 /* =========================================================
@@ -200,195 +478,54 @@ a { color: inherit; }
    ========================================================= */
 
 body.chat-body {
+  --shell-max: 1040px;
   height: 100dvh;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   background-color: var(--color-cream-dark);
-  background-image:
-    radial-gradient(rgba(93, 68, 11, 0.05) 1px, transparent 1px),
-    radial-gradient(rgba(93, 68, 11, 0.035) 1px, transparent 1px);
-  background-size: 3px 3px, 7px 7px;
-  background-position: 0 0, 2px 3px;
-  transition: background 0.2s;
+  transition: background-color 0.15s;
 }
+:root[data-theme="dark"] body.chat-body { background-color: var(--color-background); }
 
 #app {
-  --hdr-bg: #ffffff;
-  --hdr-title: var(--color-text);
-  --hdr-sub: var(--color-text-muted);
-  --hdr-link: var(--color-text-faint);
-  --app-bg: var(--color-cream);
   --primary: var(--color-brand-primary);
   --primary-hover: var(--color-brand-primary-hover);
   --primary-text: var(--color-brand-secondary-light);
   --user-bubble: var(--color-brand-primary);
   --user-text: var(--color-brand-secondary-light);
-  --asst-bubble: #FDF9EE;
-  --asst-text: #3B2107;
+  --asst-bubble: var(--color-surface);
+  --asst-text: var(--color-text);
   --accent: var(--color-brand-secondary);
   --border: var(--color-border);
   --input-border: var(--color-border-strong);
-  --input-bg: #faf7f4;
   --quick-bg: var(--color-surface-muted);
 
-  width: 100%;
-  max-width: 720px;
-  height: 100dvh;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--app-bg);
-  box-shadow: var(--shadow-lg);
-  transition: background 0.2s;
+  min-height: 0;
 }
 
 #app.access-mode {
-  --hdr-bg: #ffffff;
-  --hdr-title: #2a2a3a;
-  --hdr-sub: rgba(42,42,58,0.65);
-  --hdr-link: rgba(42,42,58,0.55);
-  --app-bg: #F8F8F8;
   --primary: var(--color-amh-accent);
   --primary-hover: var(--color-amh-primary);
   --primary-text: #fff;
   --user-bubble: var(--color-amh-accent);
   --user-text: #fff;
-  --asst-bubble: #EEF3F1;
-  --asst-text: #2a2a3a;
+  --asst-bubble: var(--color-surface);
+  --asst-text: var(--color-text);
   --accent: var(--color-amh-accent);
   --border: var(--color-amh-mint);
   --input-border: var(--color-amh-mint);
-  --input-bg: #fff;
   --quick-bg: var(--color-amh-lightgray);
 }
 
-body.access-mode { background-color: var(--color-amh-lightgray); background-image: none; }
-
-header {
-  background: var(--hdr-bg);
-  padding: 12px 20px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-  position: relative;
-  transition: background 0.2s, border-color 0.2s;
+.chat-shell {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
 }
-
-.header-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  text-decoration: none;
-  color: inherit;
-  border-radius: var(--radius-sm);
-}
-
-header h1 { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--hdr-title); letter-spacing: 0.01em; line-height: 1.2; }
-header p { font-family: var(--font-ui); font-size: 11.5px; color: var(--hdr-sub); margin-top: 1px; }
-
-#header-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-#header-actions a, #header-actions button.link-btn {
-  color: var(--hdr-link);
-  font-size: 12px;
-  text-decoration: none;
-  background: none;
-  border: none;
-  font-family: inherit;
-  cursor: pointer;
-  padding: 4px 2px;
-}
-#header-actions a:hover, #header-actions button.link-btn:hover { color: var(--hdr-title); }
-
-.org-indicator {
-  display: flex;
-  align-items: center;
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 3px 8px;
-}
-.org-indicator[hidden] { display: none; }
-
-#mode-toggle, #install-btn {
-  font-size: 11px;
-  font-weight: 600;
-  font-family: inherit;
-  color: var(--hdr-title);
-  background: rgba(0,0,0,0.045);
-  border: 1px solid rgba(0,0,0,0.14);
-  border-radius: var(--radius-pill);
-  padding: 4px 10px;
-  cursor: pointer;
-  white-space: nowrap;
-  line-height: 1.6;
-  transition: background 0.15s;
-}
-#mode-toggle:hover, #install-btn:hover { background: rgba(0,0,0,0.08); }
-#install-btn[hidden] { display: none; }
-
-/* App-update control — deliberately styled apart from #mode-toggle /
-   #reconnect-btn so it never reads as "Reconnect QuickBooks" or the org
-   switch. Neutral on the white shell in both Mi Casa and Access states. */
-.update-widget {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.update-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: inherit;
-  color: var(--hdr-title);
-  background: rgba(0,0,0,0.045);
-  border: 1px solid rgba(0,0,0,0.14);
-  border-radius: var(--radius-pill);
-  padding: 4px 10px;
-  cursor: pointer;
-  white-space: nowrap;
-  line-height: 1.6;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-.update-btn:hover:not(:disabled) { background: rgba(0,0,0,0.08); }
-.update-btn:disabled { cursor: default; opacity: 0.7; }
-.update-icon { width: 13px; height: 13px; flex-shrink: 0; }
-.update-status {
-  font-size: 11px;
-  color: var(--hdr-link);
-  max-width: 200px;
-}
-.update-widget[data-state="available"] .update-btn,
-.update-widget[data-state="installing"] .update-btn {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.update-widget[data-state="failed"] .update-status { color: var(--color-danger-text); }
-.update-widget[data-state="success"] .update-status { color: var(--color-success-text); }
-
-#reconnect-btn {
-  font-size: 12px;
-  font-weight: 600;
-  font-family: inherit;
-  color: var(--hdr-title);
-  background: transparent;
-  border: 1.5px solid var(--hdr-title);
-  border-radius: var(--radius-pill);
-  padding: 3px 10px;
-  cursor: pointer;
-  text-decoration: none;
-  line-height: 1.6;
-}
-#reconnect-btn:hover { background: rgba(255,255,255,0.1); }
 
 #banner {
   padding: 8px 16px;
@@ -404,7 +541,7 @@ header p { font-family: var(--font-ui); font-size: 11.5px; color: var(--hdr-sub)
 #messages {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 16px;
+  padding: 20px 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -412,14 +549,14 @@ header p { font-family: var(--font-ui); font-size: 11.5px; color: var(--hdr-sub)
 }
 
 .bubble { max-width: 82%; padding: 12px 16px; border-radius: 18px; font-size: 14px; line-height: 1.6; word-break: break-word; }
-.bubble.assistant { background: var(--asst-bubble); color: var(--asst-text); border-bottom-left-radius: 4px; align-self: flex-start; box-shadow: var(--shadow-sm); border: 1px solid rgba(93,68,11,0.06); }
+.bubble.assistant { background: var(--asst-bubble); color: var(--asst-text); border-bottom-left-radius: 4px; align-self: flex-start; box-shadow: var(--shadow-sm); border: 1px solid var(--color-border); }
 .bubble.user { background: var(--user-bubble); color: var(--user-text); border-bottom-right-radius: 4px; align-self: flex-end; box-shadow: var(--shadow-sm); }
 .bubble.error { background: var(--color-danger-bg); color: var(--color-danger-text); border: 1px solid var(--color-danger-border); align-self: flex-start; border-bottom-left-radius: 4px; }
 .bubble p + p { margin-top: 8px; }
 .bubble ul, .bubble ol { padding-left: 20px; margin-top: 6px; }
 .bubble li { margin-bottom: 4px; }
 .bubble strong { font-weight: 600; }
-.bubble code { background: rgba(0,0,0,0.08); padding: 1px 5px; border-radius: 3px; font-size: 12.5px; font-family: 'SF Mono', 'Fira Code', monospace; }
+.bubble code { background: rgba(127,127,127,0.18); padding: 1px 5px; border-radius: 3px; font-size: 12.5px; font-family: 'SF Mono', 'Fira Code', monospace; }
 
 .bubble-retry-btn {
   display: block;
@@ -457,7 +594,7 @@ header p { font-family: var(--font-ui); font-size: 11.5px; color: var(--hdr-sub)
 }
 .suggested-prompt-btn:hover { background: var(--color-surface-muted); border-color: var(--color-border-strong); }
 
-.typing { display: flex; align-items: center; gap: 6px; padding: 14px 18px; background: var(--asst-bubble); border-radius: 18px; border-bottom-left-radius: 4px; align-self: flex-start; box-shadow: var(--shadow-sm); }
+.typing { display: flex; align-items: center; gap: 6px; padding: 14px 18px; background: var(--asst-bubble); border-radius: 18px; border-bottom-left-radius: 4px; align-self: flex-start; box-shadow: var(--shadow-sm); border: 1px solid var(--color-border); }
 .typing .typing-dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; animation: bounce 1.2s infinite; }
 .typing .typing-dot:nth-child(3) { animation-delay: 0.2s; }
 .typing .typing-dot:nth-child(4) { animation-delay: 0.4s; }
@@ -475,15 +612,15 @@ header p { font-family: var(--font-ui); font-size: 11.5px; color: var(--hdr-sub)
 .preview-table td.status-found { color: var(--color-success-text); font-weight: 600; }
 .preview-table td.status-missing { color: var(--color-danger-text); font-weight: 600; }
 .preview-table td.status-already { color: var(--color-text-faint); font-style: italic; }
-.preview-table tr.row-dimmed td { color: #bbb; }
-.preview-table tr.row-dimmed td.status-already { color: #bbb; }
+.preview-table tr.row-dimmed td { color: var(--color-text-faint); }
+.preview-table tr.row-dimmed td.status-already { color: var(--color-text-faint); }
 .preview-card .preview-all-done { font-size: 13px; color: var(--color-text-muted); font-style: italic; padding: 6px 0; }
 
 .preview-actions { display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
 .btn-confirm { background: var(--primary); color: var(--primary-text); border: none; border-radius: var(--radius-md); padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.15s; min-height: 40px; }
 .btn-confirm:hover { background: var(--primary-hover); }
 .btn-confirm:disabled { opacity: 0.5; cursor: default; }
-.btn-cancel { background: var(--color-surface-muted); color: #555; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.15s; min-height: 40px; }
+.btn-cancel { background: var(--color-surface-muted); color: var(--color-text-muted); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; transition: background 0.15s; min-height: 40px; }
 .btn-cancel:hover { background: var(--color-cream-dark); }
 
 .preview-card .preview-status { font-size: 13px; color: var(--primary); padding: 6px 0; }
@@ -494,47 +631,63 @@ header p { font-family: var(--font-ui); font-size: 11.5px; color: var(--hdr-sub)
 .payment-form label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted); margin-top: 4px; }
 .payment-form input, .payment-form select {
   border: 1.5px solid var(--input-border); border-radius: var(--radius-md); padding: 9px 12px; font-size: 14px;
-  font-family: inherit; color: var(--color-text); background: var(--input-bg); outline: none; transition: border-color 0.15s;
+  font-family: inherit; color: var(--color-text); background: var(--color-input-bg); outline: none; transition: border-color 0.15s;
   min-height: 40px;
 }
 .payment-form select { appearance: none; cursor: pointer; }
-.payment-form input:focus, .payment-form select:focus { border-color: var(--accent); background: #fff; }
+.payment-form input:focus, .payment-form select:focus { border-color: var(--accent); background: var(--color-surface); }
 
-#quick-actions { display: flex; gap: 8px; padding: 10px 16px; overflow-x: auto; flex-shrink: 0; background: var(--quick-bg); border-top: 1px solid var(--border); scrollbar-width: none; }
+#quick-actions { display: flex; gap: 8px; padding: 10px 0; overflow-x: auto; flex-shrink: 0; scrollbar-width: none; }
 #quick-actions::-webkit-scrollbar { display: none; }
 .quick-btn { background: var(--primary); color: var(--primary-text); border: none; border-radius: var(--radius-pill); padding: 9px 16px; font-size: 12.5px; font-weight: 600; font-family: inherit; white-space: nowrap; cursor: pointer; flex-shrink: 0; letter-spacing: 0.02em; transition: background 0.15s; min-height: 38px; }
 .quick-btn:hover { background: var(--primary-hover); }
 
-#access-notice { display: none; align-items: center; justify-content: center; gap: 10px; padding: 10px 16px; background: var(--quick-bg); border-top: 1px solid var(--border); font-size: 13px; color: var(--color-text-muted); flex-shrink: 0; text-align: center; font-style: italic; }
-#access-notice .logo-amh { flex-shrink: 0; font-style: normal; }
+#access-notice { display: none; align-items: center; justify-content: center; gap: 10px; padding: 10px 0; font-size: 13px; color: var(--color-text-muted); flex-shrink: 0; text-align: center; font-style: italic; border-top: 1px solid var(--border); }
 #app.access-mode #quick-actions { display: none; }
 #app.access-mode #access-notice { display: flex; }
 
-#input-row { background: var(--color-surface); border-top: 1px solid var(--border); padding: 12px 16px; display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0; }
+#input-row { border-top: 1px solid var(--border); padding: 12px 0 20px; display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0; }
 #user-input {
   flex: 1; border: 1.5px solid var(--input-border); border-radius: 22px; padding: 10px 16px; font-size: 14px;
   font-family: inherit; resize: none; outline: none; line-height: 1.5; max-height: 120px; overflow-y: auto;
-  color: var(--color-text); background: var(--input-bg); transition: border-color 0.15s;
+  color: var(--color-text); background: var(--color-input-bg); transition: border-color 0.15s;
 }
 #user-input::placeholder { color: var(--color-text-faint); }
-#user-input:focus { border-color: var(--accent); background: #fff; }
+#user-input:focus { border-color: var(--accent); background: var(--color-surface); }
 #user-input:disabled { opacity: 0.6; cursor: default; }
 #send-btn { height: 42px; min-width: 76px; padding: 0 20px; border-radius: 22px; border: none; background: var(--primary); color: var(--primary-text); font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer; flex-shrink: 0; letter-spacing: 0.02em; transition: background 0.15s, opacity 0.15s; }
 #send-btn:hover { background: var(--primary-hover); }
 #send-btn:disabled { opacity: 0.4; cursor: default; }
 
 @media (max-width: 480px) {
-  header { flex-wrap: wrap; row-gap: 8px; padding: 12px 14px; }
-  .header-brand { min-width: 0; }
-  .header-brand span { min-width: 0; }
-  header h1 { font-size: 15px; }
-  header p { font-size: 10.5px; }
-  #header-actions { width: 100%; justify-content: flex-end; margin-left: 0; flex-wrap: wrap; gap: 6px 8px; }
+  #input-row { flex-wrap: wrap; }
+  #user-input { flex-basis: 100%; }
+  #send-btn { flex: 1; }
 }
 
 /* =========================================================
-   Static / auth pages (login, invite, change-password, admin, offline)
+   Static / auth pages (login, invite, change-password, offline)
+   These stay light-only regardless of the user's theme choice —
+   dark mode is scoped to the authenticated app shell + Admin,
+   where the requirements explicitly apply (tables, forms, chat,
+   badges). Re-pinning the tokens here also sidesteps the built-in
+   Mi Casa mark being dark ink with no dark-safe variant on these
+   pages.
    ========================================================= */
+
+body.static-page-body,
+body.textured-bg {
+  --color-background: #FAF8F3;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #F5F0E8;
+  --color-input-bg: #FAF7F4;
+  --color-text: #2A2422;
+  --color-text-muted: #6b6058;
+  --color-text-faint: #9a9086;
+  --color-border: #e5dccb;
+  --color-border-strong: #d6c9bc;
+  background-color: var(--color-background);
+}
 
 body.static-page-body {
   min-height: 100vh;
@@ -557,7 +710,7 @@ body.static-page-body {
 
 .static-card h1 { font-family: var(--font-display); font-size: 21px; font-weight: 700; color: var(--color-brand-primary); margin-bottom: 6px; }
 .static-card .subtitle { font-size: 13.5px; color: var(--color-text-muted); margin-bottom: 30px; line-height: 1.5; }
-.static-card p { color: #444; line-height: 1.6; margin-bottom: 12px; }
+.static-card p { color: var(--color-text-muted); line-height: 1.6; margin-bottom: 12px; }
 
 .error-box {
   background: var(--color-danger-bg); border: 1px solid var(--color-danger-border); color: var(--color-danger-text); border-radius: var(--radius-sm);
@@ -569,10 +722,10 @@ body.static-page-body {
 .field label { display: block; font-size: 12px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
 .field input {
   width: 100%; border: 1.5px solid var(--color-border-strong); border-radius: var(--radius-md); padding: 11px 14px; font-size: 14px;
-  font-family: inherit; color: var(--color-text); background: #faf7f4; outline: none; transition: border-color 0.15s;
+  font-family: inherit; color: var(--color-text); background: var(--color-input-bg); outline: none; transition: border-color 0.15s;
   min-height: 44px;
 }
-.field input:focus { border-color: var(--color-brand-secondary); background: #fff; }
+.field input:focus { border-color: var(--color-brand-secondary); background: var(--color-surface); }
 
 .google-btn, .primary-btn {
   display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%;
@@ -589,21 +742,38 @@ body.static-page-body {
 .legal-links { margin-top: 6px; }
 .legal-links a { margin: 0 6px; }
 
-/* Admin page */
+/* =========================================================
+   Admin page — neutral design system. No dominant brand
+   background; org colors appear only as small accents (badges,
+   the shared header's org switcher).
+   ========================================================= */
 
-body.admin-body { align-items: flex-start; padding: 32px 16px; }
-.admin-page { width: 100%; max-width: 720px; margin: 0 auto; }
-.admin-header { background: var(--color-brand-primary); border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding: 18px 24px; display: flex; align-items: center; gap: 16px; }
-.admin-header h1 { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--color-brand-secondary-light); flex: 1; }
-.admin-header a { color: rgba(255,255,255,0.65); text-decoration: none; font-size: 13px; }
-.admin-header a:hover { color: var(--color-brand-secondary-light); }
-.admin-card { background: var(--color-surface); border-radius: 0 0 var(--radius-lg) var(--radius-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
-.admin-section { padding: 24px; border-bottom: 1px solid var(--color-cream-dark); }
-.admin-section:last-child { border-bottom: none; }
-.admin-section-title { font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); margin-bottom: 16px; }
+body.admin-body {
+  align-items: flex-start;
+  padding-block: var(--space-6);
+}
+.admin-shell { padding-top: var(--space-2); padding-bottom: var(--space-7); }
+.admin-intro { margin-bottom: var(--space-5); }
+.admin-intro h1 { font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-text); margin-bottom: 4px; }
+.admin-intro p { font-size: 13.5px; color: var(--color-text-muted); }
+
+.admin-section-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 22px 24px;
+  margin-bottom: var(--space-4);
+}
+.admin-section-head { margin-bottom: 18px; }
+.admin-section-head h2 { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--color-text); }
+.admin-section-desc { font-size: 12.5px; color: var(--color-text-muted); margin-top: 3px; }
+.admin-subsection + .admin-subsection { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--color-border); }
+.admin-subsection-title { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); margin-bottom: 12px; }
+
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .admin-table { width: 100%; min-width: 480px; border-collapse: collapse; }
-.admin-table td { padding: 10px 0; font-size: 14px; color: var(--color-text); border-bottom: 1px solid var(--color-cream-dark); vertical-align: middle; }
+.admin-table th { text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted); padding: 0 0 8px; border-bottom: 1.5px solid var(--color-border); }
+.admin-table td { padding: 10px 0; font-size: 14px; color: var(--color-text); border-bottom: 1px solid var(--color-border); vertical-align: middle; }
 .admin-table tr:last-child td { border-bottom: none; }
 .admin-table td.email-cell { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; }
 .admin-table td.action-cell { text-align: right; width: 80px; }
@@ -611,21 +781,22 @@ body.admin-body { align-items: flex-start; padding: 32px 16px; }
 .btn-remove:hover { background: var(--color-danger-bg); }
 .empty { color: var(--color-text-faint); font-size: 14px; font-style: italic; }
 .add-row { display: flex; flex-direction: column; gap: 10px; }
-.add-row input { border: 1.5px solid var(--color-border-strong); border-radius: var(--radius-md); padding: 10px 14px; font-size: 14px; font-family: inherit; color: var(--color-text); background: #faf7f4; outline: none; transition: border-color 0.15s; min-height: 42px; }
-.add-row input:focus { border-color: var(--color-brand-secondary); background: #fff; }
+.add-row input { border: 1.5px solid var(--color-border-strong); border-radius: var(--radius-md); padding: 10px 14px; font-size: 14px; font-family: inherit; color: var(--color-text); background: var(--color-input-bg); outline: none; transition: border-color 0.15s; min-height: 42px; }
+.add-row input:focus { border-color: var(--color-brand-secondary); background: var(--color-surface); }
 .add-row label { font-size: 11px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #444; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-muted); }
 .btn-add { background: var(--color-brand-primary); color: var(--color-brand-secondary-light); border: none; border-radius: var(--radius-md); padding: 11px 20px; font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; transition: background 0.15s; align-self: flex-start; min-height: 42px; }
 .btn-add:hover { background: var(--color-brand-primary-hover); }
 .btn-add:disabled { opacity: 0.4; cursor: default; }
-#toast { margin-top: 16px; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; display: none; }
-#toast.success { background: var(--color-success-bg); border: 1px solid var(--color-success-border); color: var(--color-success-text); display: block; }
-#toast.error { background: var(--color-danger-bg); border: 1px solid var(--color-danger-border); color: var(--color-danger-text); display: block; }
+#toast, #invite-toast, #test-email-toast { margin-top: 16px; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; display: none; }
+#toast.success, #invite-toast.success, #test-email-toast.success { background: var(--color-success-bg); border: 1px solid var(--color-success-border); color: var(--color-success-text); display: block; }
+#toast.error, #invite-toast.error, #test-email-toast.error { background: var(--color-danger-bg); border: 1px solid var(--color-danger-border); color: var(--color-danger-text); display: block; }
 
-/* QuickBooks connection-status widget */
+/* QuickBooks connection-status card (full detail — the compact header
+   badge shares its classification logic via public/qbo-status.js). */
 .qbo-status { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 16px; border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface-muted); }
 .qbo-status-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.qbo-status-icon { width: 20px; height: 20px; flex-shrink: 0; }
+.qbo-status-icon { width: 20px; height: 20px; flex-shrink: 0; color: var(--color-text-muted); }
 .qbo-status-text { min-width: 0; }
 .qbo-status-label { font-size: 13.5px; font-weight: 700; display: block; }
 .qbo-status-detail { font-size: 12px; color: var(--color-text-muted); display: block; margin-top: 1px; }
@@ -647,10 +818,6 @@ body.admin-body { align-items: flex-start; padding: 32px 16px; }
 .btn-disconnect { background: none; border: 1px solid var(--color-danger-border); color: var(--color-danger-text); border-radius: var(--radius-sm); padding: 8px 14px; font-size: 12.5px; font-weight: 600; font-family: inherit; cursor: pointer; min-height: 34px; }
 .btn-disconnect:hover { background: var(--color-danger-bg); }
 
-/* Simple confirm affordance for destructive actions (native confirm() is used
-   for the JS behavior; this class just marks the trigger visually). */
-.btn-remove, .btn-disconnect { position: relative; }
-
 /* Utility classes — used instead of inline style="" attributes so the CSP's
    style-src can stay 'self' only, with no 'unsafe-inline'. */
 .text-danger { color: var(--color-danger-text); }
@@ -663,7 +830,7 @@ body.admin-body { align-items: flex-start; padding: 32px 16px; }
 .mb-12 { margin-bottom: 12px; }
 
 /* Admin: users/invitations management */
-.admin-table td.role-cell select { border: 1.5px solid var(--color-border-strong); border-radius: var(--radius-sm); padding: 6px 8px; font-size: 12.5px; font-family: inherit; color: var(--color-text); background: #faf7f4; min-height: 32px; }
+.admin-table td.role-cell select { border: 1.5px solid var(--color-border-strong); border-radius: var(--radius-sm); padding: 6px 8px; font-size: 12.5px; font-family: inherit; color: var(--color-text); background: var(--color-input-bg); min-height: 32px; }
 .admin-table td.actions-cell { text-align: right; white-space: nowrap; }
 .admin-table td.actions-cell .btn-secondary { margin-left: 6px; }
 .btn-secondary { background: none; border: 1px solid var(--color-border-strong); color: var(--color-brand-primary); border-radius: var(--radius-sm); padding: 6px 12px; font-size: 12px; font-family: inherit; cursor: pointer; font-weight: 600; transition: background 0.15s; min-height: 30px; }
@@ -672,25 +839,112 @@ body.admin-body { align-items: flex-start; padding: 32px 16px; }
 .badge-active { background: var(--color-success-bg); color: var(--color-success-text); }
 .badge-disabled { background: var(--color-danger-bg); color: var(--color-danger-text); }
 .badge-pending { background: var(--color-warning-bg); color: var(--color-warning-text); }
-.badge-expired { background: var(--color-cream-dark); color: var(--color-text-muted); }
+.badge-expired { background: var(--color-surface-muted); color: var(--color-text-muted); }
 .badge-force-pw { background: var(--color-warning-bg); color: var(--color-warning-text); margin-left: 6px; }
-.add-row select { border: 1.5px solid var(--color-border-strong); border-radius: var(--radius-md); padding: 10px 14px; font-size: 14px; font-family: inherit; color: var(--color-text); background: #faf7f4; outline: none; min-height: 42px; }
-.add-row select:focus { border-color: var(--color-brand-secondary); background: #fff; }
-.reveal-box { background: #faf7f4; border: 1.5px dashed var(--color-brand-secondary); border-radius: var(--radius-sm); padding: 12px 14px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; color: var(--color-text); word-break: break-all; margin-top: 10px; }
+.add-row select { border: 1.5px solid var(--color-border-strong); border-radius: var(--radius-md); padding: 10px 14px; font-size: 14px; font-family: inherit; color: var(--color-text); background: var(--color-input-bg); outline: none; min-height: 42px; }
+.add-row select:focus { border-color: var(--color-brand-secondary); background: var(--color-surface); }
+.reveal-box { background: var(--color-input-bg); border: 1.5px dashed var(--color-brand-secondary); border-radius: var(--radius-sm); padding: 12px 14px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; color: var(--color-text); word-break: break-all; margin-top: 10px; }
 .reveal-box .reveal-label { display: block; font-family: inherit; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-warning-text); margin-bottom: 6px; }
 .audit-list { list-style: none; font-size: 13px; max-height: 320px; overflow-y: auto; }
-.audit-list li { padding: 8px 0; border-bottom: 1px solid var(--color-cream-dark); color: #444; }
+.audit-list li { padding: 8px 0; border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); }
 .audit-list li:last-child { border-bottom: none; }
 .audit-list .audit-time { color: var(--color-text-faint); font-size: 11px; display: block; }
 
-/* Simple static text pages (terms, privacy) */
-.doc-page { max-width: 680px; margin: 0 auto; padding: 60px 24px 40px; color: #222; line-height: 1.7; font-family: var(--font-body); }
+/* Role reference cards ("Roles & Access" section) */
+.role-reference { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.role-reference-item { border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 12px 14px; background: var(--color-surface-muted); }
+.role-reference-item h3 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+.role-reference-item p { font-size: 12px; color: var(--color-text-muted); line-height: 1.5; }
+
+/* Reminder schedule reference ("Email & Reminder Status" section) */
+.reminder-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.reminder-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--color-border); }
+.reminder-list li:last-child { border-bottom: none; }
+.reminder-name { color: var(--color-text); font-weight: 600; }
+.reminder-schedule { color: var(--color-text-muted); font-size: 12px; text-align: right; }
+
+/* Appearance section — theme segmented control */
+.theme-picker { display: inline-flex; border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: 3px; background: var(--color-surface-muted); }
+.theme-option { position: relative; }
+.theme-option input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.theme-option label {
+  display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--color-text-muted);
+  padding: 8px 16px; min-height: 40px; border-radius: var(--radius-pill); cursor: pointer; white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.theme-option input:checked + label { background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-sm); }
+.theme-option input:focus-visible + label { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+/* Application Updates section (moved here from the main header) */
+.update-widget { display: flex; flex-direction: column; gap: 12px; }
+.update-versions { display: flex; flex-wrap: wrap; gap: 20px; font-size: 13px; }
+.update-versions dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted); margin-bottom: 2px; }
+.update-versions dd { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; color: var(--color-text); }
+.update-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.update-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; font-family: inherit; color: var(--color-brand-secondary-light);
+  background: var(--color-brand-primary); border: none; border-radius: var(--radius-pill);
+  padding: 9px 18px; min-height: 40px; cursor: pointer; white-space: nowrap; transition: background 0.15s;
+}
+.update-btn:hover:not(:disabled) { background: var(--color-brand-primary-hover); }
+.update-btn:disabled { cursor: default; opacity: 0.6; }
+.update-icon { width: 15px; height: 15px; flex-shrink: 0; }
+.update-status { font-size: 13px; color: var(--color-text-muted); }
+.update-widget[data-state="available"] .update-status { color: var(--color-brand-primary); font-weight: 600; }
+.update-widget[data-state="failed"] .update-status { color: var(--color-danger-text); font-weight: 600; }
+.update-widget[data-state="success"] .update-status { color: var(--color-success-text); font-weight: 600; }
+.update-widget[data-state="offline"] .update-status { color: var(--color-warning-text); }
+
+@media (max-width: 700px) {
+  .admin-section-card { padding: 18px 16px; }
+}
+
+/* Simple static text pages (terms, privacy) — also light-pinned; see the
+   static-page-body note above. */
+.doc-page {
+  --color-background: #FAF8F3;
+  --color-surface: #FFFFFF;
+  --color-text: #222222;
+  --color-text-muted: #6b6058;
+  --color-text-faint: #9a9086;
+  --color-border: #e5dccb;
+  max-width: 680px; margin: 0 auto; padding: 60px 24px 40px; color: var(--color-text); line-height: 1.7; font-family: var(--font-body);
+  background: var(--color-background);
+}
 .doc-page .header-brand { margin-bottom: 28px; }
 .doc-page .header-brand .brand-lockup-text { font-size: 15px; color: var(--color-brand-primary); }
 .doc-page h1 { font-family: var(--font-display); font-size: 26px; margin-bottom: 8px; color: var(--color-brand-primary); }
 .doc-page hr { border: none; border-top: 1px solid var(--color-border); margin: 24px 0; }
-.doc-page p { color: #444; }
+.doc-page p { color: var(--color-text-muted); }
 .doc-page .fine-print { font-size: 13px; color: var(--color-text-faint); font-family: var(--font-ui); }
-.doc-footer { max-width: 680px; margin: 0 auto; padding: 0 24px 48px; }
+.doc-footer {
+  --color-background: #FAF8F3;
+  --color-text-muted: #6b6058;
+  max-width: 680px; margin: 0 auto; padding: 0 24px 48px; background: var(--color-background);
+}
 .doc-footer .legal-links { font-size: 12.5px; font-family: var(--font-ui); }
 .doc-footer .legal-links a { color: var(--color-text-muted); margin-right: 14px; }
+
+/* Reusable brand lockup (icon mark + wordmark) — still used on terms/privacy. */
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: inherit;
+}
+.brand-lockup img { display: block; flex-shrink: 0; }
+.brand-lockup-text {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1.15;
+}
+.brand-lockup-text .brand-tagline {
+  display: block;
+  font-family: var(--font-ui);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}

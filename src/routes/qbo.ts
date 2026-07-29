@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { AppEnv } from '../honoTypes';
 import { requireAuth, requireRole, blockIfPasswordChangeRequired } from '../middleware/auth';
@@ -38,7 +39,91 @@ qboRoutes.get('/connect', requireAuth, blockIfPasswordChangeRequired, requireRol
   return c.redirect(authorizeUrl, 302);
 });
 
-qboRoutes.get('/callback', requireAuth, blockIfPasswordChangeRequired, requireRole('admin'), async c => {
+// The CRM-initiated branch: MiCasaCRM's POST /internal/oauth/authorize-url
+// mints a state row keyed 'svc:<crm-user-email>' instead of a QuikBooks
+// staff user id (see src/routes/internal.ts) — there is no QuikBooks
+// session/cookie for that flow, since the CRM's own admin-only permission
+// check already ran before that state was minted. The trust boundary is the
+// state value itself: single-use, 10-minute TTL, only ever mintable by a
+// caller who already passed finance.oauth.connect.
+//
+// This middleware runs BEFORE requireAuth/requireRole('admin') below and
+// either fully handles the CRM-initiated redirect itself (never calling
+// next(), so the staff-session checks after it never run for this request),
+// or calls next() to fall through to the unchanged staff flow when the
+// state isn't 'svc:'-prefixed (covers a missing/foreign/malformed state
+// too — the ordinary staff handler's own validateAndConsumeOAuthState
+// rejects those exactly as it always has).
+// Safe diagnostic logging only — every line here is reviewed against the
+// same rule: never log the authorization code, access/refresh tokens,
+// client secret, or encryption key. Shape/presence/outcome only.
+function logCallback(event: string, details?: Record<string, unknown>): void {
+  console.log('[QB OAUTH CALLBACK]', event, details ?? {});
+}
+
+const routeCrmInitiatedCallback: MiddlewareHandler<AppEnv> = async (c, next) => {
+  logCallback('callback_reached');
+
+  const callbackState = c.req.query('state');
+  logCallback('state_present', { present: Boolean(callbackState) });
+
+  const stateRow = callbackState
+    ? await c.env.DB.prepare(`SELECT user_id FROM oauth_state WHERE state = ?`).bind(callbackState).first<{ user_id: string }>()
+    : null;
+
+  if (!stateRow?.user_id.startsWith('svc:')) {
+    // Not a CRM-initiated state (missing, unknown, or a staff-flow state) —
+    // fall through unchanged to the ordinary staff-session callback below,
+    // which performs its own full validation and rejects appropriately.
+    logCallback('not_crm_initiated_falling_through');
+    return next();
+  }
+
+  const stateUserId = stateRow.user_id;
+  const code = c.req.query('code');
+  const realmId = c.req.query('realmId');
+  // CRM_BASE_URL is server-side configuration, never a caller-supplied
+  // value — there is no query parameter or header that can influence where
+  // this redirects. An arbitrary "return URL" is not accepted from the
+  // request at all.
+  const crmBaseUrl = (c.env.CRM_BASE_URL || '').replace(/\/+$/, '');
+  const redirectBase = crmBaseUrl ? `${crmBaseUrl}/finance.html` : '/index.html';
+
+  const stateResult = await validateAndConsumeOAuthState(c.env, callbackState, callbackState, stateUserId);
+  logCallback('state_validation', { valid: stateResult.ok, reason: stateResult.ok ? undefined : stateResult.reason });
+  if (!stateResult.ok) {
+    return c.redirect(`${redirectBase}?qbo=error&reason=state_${stateResult.reason}`, 302);
+  }
+
+  logCallback('realm_id_present', { present: Boolean(realmId) });
+  if (!code || !realmId) {
+    return c.redirect(`${redirectBase}?qbo=error&reason=missing_params`, 302);
+  }
+
+  const repo = new TokenRepository(c.env);
+  const hadExistingConnection = (await repo.getActiveRealmId()) != null;
+
+  try {
+    await connectNewRealm(c.env, code, realmId, callbackUrl(getBaseUrl(c)));
+    logCallback('token_exchange_status', { ok: true });
+  } catch (e) {
+    logCallback('token_exchange_status', { ok: false, message: e instanceof Error ? e.message : 'unknown' });
+    return c.redirect(`${redirectBase}?qbo=error&reason=exchange_failed`, 302);
+  }
+
+  logCallback('tokens_stored');
+
+  await recordAuditEvent(c.env, {
+    actor: null,
+    action: hadExistingConnection ? 'qbo_reconnected' : 'qbo_connected',
+    target: realmId,
+    metadata: { callerEmail: stateUserId.slice('svc:'.length) }
+  });
+
+  return c.redirect(`${redirectBase}?qbo=connected`, 302);
+};
+
+qboRoutes.get('/callback', routeCrmInitiatedCallback, requireAuth, blockIfPasswordChangeRequired, requireRole('admin'), async c => {
   const user = c.get('user')!;
   const cookieState = getCookie(c, OAUTH_STATE_COOKIE);
   const callbackState = c.req.query('state');

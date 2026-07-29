@@ -20,10 +20,17 @@ export interface Env {
   GMAIL_REFRESH_TOKEN?: string;
   GROQ_API_KEY?: string;
   CRON_SECRET?: string;
-  // Verifies the Mi Casa Operations Hub's signed service assertions on
+  // Verifies MiCasaCRM's (formerly the Hub's) signed service assertions on
   // /internal/* (src/middleware/internalAuth.ts). Optional so this app still
   // boots and works standalone with it unset — those routes simply refuse
-  // (503) until it's configured. Must match the Hub's own
+  // (503) until it's configured. Must match the CRM's own
   // FINANCE_INTERNAL_SECRET.
   FINANCE_INTERNAL_SECRET?: string;
+  // Non-secret: the CRM's own public origin. Used only by the CRM-initiated
+  // OAuth branch (GET /api/qbo/callback's `svc:`-prefixed state) to redirect
+  // the browser back to /finance/settings inside the CRM instead of this
+  // app's own index.html. Optional — the CRM-initiated OAuth flow reports
+  // 'not_configured' until it's set; QuikBooks' own standalone OAuth flow is
+  // unaffected either way.
+  CRM_BASE_URL?: string;
 }

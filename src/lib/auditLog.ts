@@ -13,11 +13,18 @@ export type AuditAction =
   | 'qbo_connected'
   | 'qbo_reconnected'
   | 'qbo_disconnected'
-  // Recorded from the Hub's Finance internal routes (src/routes/internal.ts)
-  // — the acting Hub user's email is not a QuickBooks Companion user id, so
-  // these use actor: null and put the email in metadata.hubUserEmail instead.
+  // Recorded from the internal Finance routes (src/routes/internal.ts),
+  // called by MiCasaCRM (formerly the Hub) — the acting user's email is not
+  // a QuickBooks Companion user id, so these use actor: null and put the
+  // email in metadata.callerEmail instead. Only real writes are audited
+  // here (matching this file's existing discipline) — read/list/prepare
+  // routes are not.
   | 'finance_billing_setup_requested'
-  | 'finance_followup_resolved';
+  | 'finance_followup_resolved'
+  | 'finance_customer_created'
+  | 'finance_invoice_created'
+  | 'finance_payment_recorded'
+  | 'finance_invoice_reminder_requested';
 
 export interface AuditActor {
   id: string;

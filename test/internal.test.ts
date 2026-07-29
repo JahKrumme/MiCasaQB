@@ -148,6 +148,28 @@ describe('GET /internal/connection-status', () => {
   });
 });
 
+describe('GET /internal/health/detailed', () => {
+  it('reports presence-only config flags and never leaks a token, even when connected', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    const token = await signTestAssertion(env.FINANCE_INTERNAL_SECRET!, {
+      sub: 'admin@example.com',
+      org: 'micasa',
+      role: 'admin',
+      permissions: ['finance.connectionHealth.view']
+    });
+    const res = await app.fetch(req('/health/detailed', { headers: { 'X-Service-Assertion': token } }), env);
+    expect(res.status).toBe(200);
+    const rawBody = await res.text();
+    expect(rawBody).not.toMatch(/access_token|refresh_token|fake-access-token|fake-refresh-token/i);
+    const body = JSON.parse(rawBody);
+    expect(body.oauthConnected).toBe(true);
+    expect(body.reconnectionRequired).toBe(false);
+    expect(typeof body.gmailConfigured).toBe('boolean');
+    expect(typeof body.groqConfigured).toBe('boolean');
+  });
+});
+
 describe('GET /internal/follow-up-summary', () => {
   it('returns 503 when QuickBooks is not connected', async () => {
     const env = createTestEnv();
@@ -223,7 +245,7 @@ describe('POST /internal/billing-setup-request', () => {
     const entry = log.find(e => e.action === 'finance_billing_setup_requested');
     expect(entry).toBeTruthy();
     expect(entry?.actorUserId).toBeNull();
-    expect(entry?.metadata).toEqual({ hubUserEmail: 'staff@example.com', crmRecordId: 'resident-123' });
+    expect(entry?.metadata).toEqual({ callerEmail: 'staff@example.com', crmRecordId: 'resident-123' });
   });
 });
 

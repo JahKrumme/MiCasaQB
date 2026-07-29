@@ -29,6 +29,13 @@
 		// `wrangler deploy --var APP_VERSION:<short-sha> APP_BUILT_AT:<iso-timestamp>`.
 		// These defaults only apply to local `wrangler dev` / manual deploys.
 		"APP_VERSION": "dev",
-		"APP_BUILT_AT": ""
+		"APP_BUILT_AT": "",
+		// Non-secret. The deployed MiCasaCRM's own public origin — used only by
+		// the CRM-initiated OAuth branch (GET /api/qbo/callback's `svc:`-prefixed
+		// state, see src/routes/qbo.ts) to redirect the browser back into the CRM
+		// instead of this app's own index.html. Currently points at the
+		// walking-skeleton Worker (no Finance UI there yet); update once the
+		// CRM's Finance module is actually ported and deployed.
+		"CRM_BASE_URL": "https://mi-casa-crm.elijahkrumme.workers.dev"
 	}
 }

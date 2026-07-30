@@ -106,6 +106,94 @@ describe('POST /internal/customers/confirm', () => {
   });
 });
 
+describe('GET /internal/invoices', () => {
+  // Regression coverage for the WHERE 1=1 bug: the unfiltered request is
+  // exactly the case that used to fail against a real QBQL parser (mocked
+  // here, but see test/qbql.test.ts for the query-string-shape assertions,
+  // and this suite for the actual QuickBooks API round trip).
+  it('is forbidden without finance.invoices.view', async () => {
+    const env = createTestEnv();
+    const t = await token(env.FINANCE_INTERNAL_SECRET!, ['some.other.permission']);
+    const res = await app.fetch(req('/invoices', { headers: { 'X-Service-Assertion': t } }), env);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 503 with reconnectionRequired when QuickBooks is not connected', async () => {
+    const env = createTestEnv();
+    const t = await token(env.FINANCE_INTERNAL_SECRET!, ['finance.invoices.view']);
+    const res = await app.fetch(req('/invoices', { headers: { 'X-Service-Assertion': t } }), env);
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { reconnectionRequired: boolean };
+    expect(body.reconnectionRequired).toBe(true);
+  });
+
+  it('an unfiltered request succeeds and sends a query with no WHERE clause to Intuit', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    let sentQuery = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        sentQuery = decodeURIComponent(new URL(url).searchParams.get('query') ?? '');
+        return new Response(JSON.stringify({ QueryResponse: { Invoice: [{ Id: '1', DocNumber: '1001', TotalAmt: 100, Balance: 50 }] } }), { status: 200 });
+      })
+    );
+    const t = await token(env.FINANCE_INTERNAL_SECRET!, ['finance.invoices.view']);
+    const res = await app.fetch(req('/invoices', { headers: { 'X-Service-Assertion': t } }), env);
+    expect(res.status).toBe(200);
+    expect(sentQuery).toBe('SELECT * FROM Invoice ORDER BY TxnDate DESC MAXRESULTS 100');
+    expect(sentQuery).not.toContain('1=1');
+    const body = (await res.json()) as { invoices: { id: string }[] };
+    expect(body.invoices).toHaveLength(1);
+    expect(body.invoices[0]!.id).toBe('1');
+  });
+
+  it('a customerId filter is passed through to a valid QBQL WHERE clause', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    let sentQuery = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        sentQuery = decodeURIComponent(new URL(url).searchParams.get('query') ?? '');
+        return new Response(JSON.stringify({ QueryResponse: {} }), { status: 200 });
+      })
+    );
+    const t = await token(env.FINANCE_INTERNAL_SECRET!, ['finance.invoices.view']);
+    const res = await app.fetch(req('/invoices?customerId=42', { headers: { 'X-Service-Assertion': t } }), env);
+    expect(res.status).toBe(200);
+    expect(sentQuery).toBe(`SELECT * FROM Invoice WHERE CustomerRef = '42' ORDER BY TxnDate DESC MAXRESULTS 100`);
+  });
+
+  it('an invalid status filter is rejected with 400 before any Intuit call is made', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const t = await token(env.FINANCE_INTERNAL_SECRET!, ['finance.invoices.view']);
+    const res = await app.fetch(req('/invoices?status=cancelled', { headers: { 'X-Service-Assertion': t } }), env);
+    expect(res.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('returns a sanitized 502 (no token/body leakage) when Intuit rejects the query', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ Fault: { Error: [{ Message: 'Query Parse Error' }] } }), { status: 400 }))
+    );
+    const t = await token(env.FINANCE_INTERNAL_SECRET!, ['finance.invoices.view']);
+    const res = await app.fetch(req('/invoices', { headers: { 'X-Service-Assertion': t } }), env);
+    expect(res.status).toBe(502);
+    const raw = await res.text();
+    expect(raw).not.toContain('access_token');
+    expect(raw).not.toContain('fake-access-token');
+    const body = JSON.parse(raw) as { error: string };
+    expect(body.error).toBe('QuickBooks request failed.');
+  });
+});
+
 describe('POST /internal/invoices/create', () => {
   it('requires confirm:true and idempotencyKey', async () => {
     const env = createTestEnv();

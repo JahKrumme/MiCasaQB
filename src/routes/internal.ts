@@ -12,6 +12,7 @@ import { requireServiceAssertion, requireServicePermission } from '../middleware
 import { getBaseUrl } from '../lib/baseUrl';
 import { TokenRepository } from '../lib/tokenRepository';
 import { qbQuery, qbCreate, disconnectRealm, QboApiError } from '../lib/qboClient';
+import { buildInvoiceQuery, InvalidQueryFilterError, type InvoiceQueryFilters } from '../lib/qbql';
 import { buildAuthorizeUrl } from '../lib/intuitOAuth';
 import { createOAuthState } from '../lib/oauthState';
 import { recordAuditEvent } from '../lib/auditLog';
@@ -47,9 +48,14 @@ interface QboInvoice {
   Balance?: string | number;
 }
 
-function handleQboError(e: unknown, label: string): { error: string } {
+// `context` is optional, additive, sanitized-only diagnostic detail (e.g.
+// entity type / whether filters were present) — never a token, secret, or
+// customer-identifying value. Every existing call site is unaffected;
+// only the ones that pass a context object get the extra log detail.
+function handleQboError(e: unknown, label: string, context?: Record<string, boolean | number | string>): { error: string } {
   const status = e instanceof QboApiError ? e.status : 500;
-  console.error(`[internal ERROR] ${label}:`, e instanceof Error ? e.name : 'unknown', status);
+  const contextStr = context ? ` ${JSON.stringify(context)}` : '';
+  console.error(`[internal ERROR] ${label}:`, e instanceof Error ? e.name : 'unknown', status, contextStr);
   return { error: 'QuickBooks request failed.' };
 }
 
@@ -257,15 +263,30 @@ internalRoutes.post('/customers/confirm', requireServicePermission('finance.cust
 internalRoutes.get('/invoices', requireServicePermission('finance.invoices.view'), async c => {
   const realmId = await requireConnectedRealm(c);
   if (!realmId) return c.json({ error: 'QuickBooks is not connected', reconnectionRequired: true }, 503);
-  try {
-    const status = c.req.query('status'); // 'overdue' | 'open' | undefined
-    const customerId = c.req.query('customerId');
-    let query = 'SELECT * FROM Invoice WHERE 1=1';
-    if (customerId) query += ` AND CustomerRef = '${customerId}'`;
-    if (status === 'open') query += ` AND Balance > '0'`;
-    if (status === 'overdue') query += ` AND Balance > '0' AND DueDate < '${new Date().toISOString().split('T')[0]}'`;
-    query += ' ORDER BY TxnDate DESC MAXRESULTS 100';
 
+  // Every filter is allowlisted/validated by buildInvoiceQuery() itself —
+  // nothing here is concatenated into the query string directly. An
+  // unrecognized/malformed filter is a 400, not a silently-ignored no-op or
+  // (as it was before this fix) a `WHERE 1=1` placeholder that made even
+  // the *unfiltered* case fail against Intuit's actual QBQL parser.
+  const filters: InvoiceQueryFilters = {};
+  const status = c.req.query('status');
+  const customerId = c.req.query('customerId');
+  if (customerId) filters.customerId = customerId;
+  // Passed through as-is (including an invalid value) — buildInvoiceQuery
+  // is the single source of truth for what counts as a valid status.
+  if (status) filters.status = status as InvoiceQueryFilters['status'];
+  const hadFilters = Object.keys(filters).length > 0;
+
+  let query: string;
+  try {
+    query = buildInvoiceQuery(filters);
+  } catch (err) {
+    if (err instanceof InvalidQueryFilterError) return c.json({ error: err.message }, 400);
+    throw err;
+  }
+
+  try {
     const data = await qbQuery(c.env, realmId, query);
     const invoices = (data.QueryResponse?.Invoice ?? []) as QboInvoice[];
     return c.json({
@@ -281,7 +302,7 @@ internalRoutes.get('/invoices', requireServicePermission('finance.invoices.view'
       }))
     });
   } catch (e) {
-    return c.json(handleQboError(e, 'invoices'), 502);
+    return c.json(handleQboError(e, 'invoices', { entity: 'Invoice', hadFilters }), 502);
   }
 });
 

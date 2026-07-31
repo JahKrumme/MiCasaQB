@@ -194,6 +194,149 @@ describe('GET /internal/invoices', () => {
   });
 });
 
+describe('POST /internal/invoices/prepare', () => {
+  // Regression coverage for the exact production mismatch: one visible
+  // proposed invoice (Patricia Range, $10,500.00) but a summary total that
+  // used to be computed across every customer with a known rate — including
+  // ones already invoiced this month — producing "Total $40,059.50 across 1
+  // invoice(s)". proposedTotal must equal the sum of the *proposed* rows only.
+  function stubProductionMismatchScenario() {
+    const activeCustomers = [
+      { Id: 'c-range', DisplayName: 'Patricia Range' },
+      { Id: 'c-1', DisplayName: 'Resident One' },
+      { Id: 'c-2', DisplayName: 'Resident Two' },
+      { Id: 'c-3', DisplayName: 'Resident Three' }
+    ];
+    // Already invoiced this month (WHERE TxnDate >= firstDay query).
+    const invoicedThisMonth = [
+      { Id: 'inv-100', CustomerRef: { value: 'c-1', name: 'Resident One' }, TotalAmt: '9,853.50'.replace(/,/g, '') },
+      { Id: 'inv-101', CustomerRef: { value: 'c-2', name: 'Resident Two' }, TotalAmt: '9853.50' },
+      { Id: 'inv-102', CustomerRef: { value: 'c-3', name: 'Resident Three' }, TotalAmt: '9852.50' }
+    ];
+    // Rate history (ORDER BY TxnDate DESC query) — most recent invoice per
+    // customer, including the three already billed this month.
+    const rateHistory = [
+      { Id: 'inv-200', CustomerRef: { value: 'c-range', name: 'Patricia Range' }, TotalAmt: 10500, TxnDate: '2026-06-20' },
+      { Id: 'inv-100', CustomerRef: { value: 'c-1', name: 'Resident One' }, TotalAmt: 9853.5, TxnDate: '2026-07-01' },
+      { Id: 'inv-101', CustomerRef: { value: 'c-2', name: 'Resident Two' }, TotalAmt: 9853.5, TxnDate: '2026-07-01' },
+      { Id: 'inv-102', CustomerRef: { value: 'c-3', name: 'Resident Three' }, TotalAmt: 9852.5, TxnDate: '2026-07-01' }
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const decoded = decodeURIComponent(url);
+        if (decoded.includes('FROM Customer')) {
+          return new Response(JSON.stringify({ QueryResponse: { Customer: activeCustomers } }), { status: 200 });
+        }
+        if (decoded.includes('ORDER BY TxnDate DESC')) {
+          return new Response(JSON.stringify({ QueryResponse: { Invoice: rateHistory } }), { status: 200 });
+        }
+        if (decoded.includes('FROM Invoice')) {
+          return new Response(JSON.stringify({ QueryResponse: { Invoice: invoicedThisMonth } }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ QueryResponse: {} }), { status: 200 });
+      })
+    );
+  }
+
+  it('rejects the exact observed production mismatch — proposedTotal matches only the proposed rows', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    stubProductionMismatchScenario();
+    const t = await token(env.FINANCE_INTERNAL_SECRET!, ['finance.invoices.manage']);
+    const res = await app.fetch(req('/invoices/prepare', { method: 'POST', headers: { 'X-Service-Assertion': t, 'Content-Type': 'application/json' } }), env);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      proposed: { customerId: string; customerName: string; amount: number }[];
+      skipped: { customerName: string; reason: string }[];
+      summary: { proposedCount: number; proposedTotal: number; skippedCount: number };
+      verification: { valid: boolean; errors: string[] };
+    };
+
+    expect(body.proposed).toHaveLength(1);
+    expect(body.proposed[0]).toMatchObject({ customerId: 'c-range', customerName: 'Patricia Range', amount: 10500 });
+
+    // This is the assertion that would have caught the production bug: the
+    // displayed total must equal the sum of the visible row(s), not
+    // $40,059.50 (which included the three already-invoiced residents).
+    expect(body.summary.proposedTotal).toBe(10500);
+    expect(body.summary.proposedCount).toBe(1);
+    expect(body.summary.proposedTotal).not.toBe(40059.5);
+
+    expect(body.skipped).toHaveLength(3);
+    expect(body.skipped.every(s => s.reason === 'Already invoiced this month')).toBe(true);
+    expect(body.summary.skippedCount).toBe(3);
+
+    expect(body.verification.valid).toBe(true);
+    expect(body.verification.errors).toEqual([]);
+  });
+
+  it('uses integer-cents-safe arithmetic for the proposed total', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const decoded = decodeURIComponent(url);
+        if (decoded.includes('FROM Customer')) {
+          return new Response(
+            JSON.stringify({ QueryResponse: { Customer: [{ Id: 'a', DisplayName: 'A' }, { Id: 'b', DisplayName: 'B' }, { Id: 'c', DisplayName: 'C' }] } }),
+            { status: 200 }
+          );
+        }
+        if (decoded.includes('ORDER BY TxnDate DESC')) {
+          return new Response(
+            JSON.stringify({
+              QueryResponse: {
+                Invoice: [
+                  { CustomerRef: { value: 'a' }, TotalAmt: 0.1, TxnDate: '2026-07-01' },
+                  { CustomerRef: { value: 'b' }, TotalAmt: 0.2, TxnDate: '2026-07-01' },
+                  { CustomerRef: { value: 'c' }, TotalAmt: 100.05, TxnDate: '2026-07-01' }
+                ]
+              }
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response(JSON.stringify({ QueryResponse: {} }), { status: 200 });
+      })
+    );
+    const t = await token(env.FINANCE_INTERNAL_SECRET!, ['finance.invoices.manage']);
+    const res = await app.fetch(req('/invoices/prepare', { method: 'POST', headers: { 'X-Service-Assertion': t, 'Content-Type': 'application/json' } }), env);
+    const body = (await res.json()) as { summary: { proposedTotal: number } };
+    // Floating-point-unsafe summation (0.1 + 0.2 + 100.05) yields
+    // 100.34999999999999 in plain JS; cents-based summation must not.
+    expect(body.summary.proposedTotal).toBe(100.35);
+  });
+
+  it('flags a duplicate customer ID as unverified instead of silently double-counting it', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const decoded = decodeURIComponent(url);
+        if (decoded.includes('FROM Customer')) {
+          // QuickBooks returning the same customer ID twice (data anomaly).
+          return new Response(
+            JSON.stringify({ QueryResponse: { Customer: [{ Id: 'dup-1', DisplayName: 'Dup Resident' }, { Id: 'dup-1', DisplayName: 'Dup Resident' }] } }),
+            { status: 200 }
+          );
+        }
+        if (decoded.includes('ORDER BY TxnDate DESC')) {
+          return new Response(JSON.stringify({ QueryResponse: { Invoice: [{ CustomerRef: { value: 'dup-1' }, TotalAmt: 500, TxnDate: '2026-07-01' }] } }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ QueryResponse: {} }), { status: 200 });
+      })
+    );
+    const t = await token(env.FINANCE_INTERNAL_SECRET!, ['finance.invoices.manage']);
+    const res = await app.fetch(req('/invoices/prepare', { method: 'POST', headers: { 'X-Service-Assertion': t, 'Content-Type': 'application/json' } }), env);
+    const body = (await res.json()) as { verification: { valid: boolean; errors: string[] } };
+    expect(body.verification.valid).toBe(false);
+    expect(body.verification.errors.length).toBeGreaterThan(0);
+  });
+});
+
 describe('POST /internal/invoices/create', () => {
   it('requires confirm:true and idempotencyKey', async () => {
     const env = createTestEnv();
@@ -219,6 +362,50 @@ describe('POST /internal/invoices/create', () => {
       env
     );
     expect(missingKey.status).toBe(400);
+  });
+
+  it('re-verifies against fresh QuickBooks state instead of trusting a stale client-supplied preview row', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    const created: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const decoded = decodeURIComponent(url);
+        // By the time Confirm is clicked, this customer has already been
+        // invoiced this month (e.g. by another staff member) — the create
+        // route must discover this itself, not trust the preview payload.
+        if (decoded.includes('FROM Invoice')) {
+          return new Response(JSON.stringify({ QueryResponse: { Invoice: [{ Id: 'inv-new', CustomerRef: { value: 'c-range' } }] } }), { status: 200 });
+        }
+        if (decoded.includes('FROM Item')) {
+          return new Response(JSON.stringify({ QueryResponse: { Item: [{ Id: 'item-1', Name: 'Room and Board' }] } }), { status: 200 });
+        }
+        if (url.includes('/invoice?')) {
+          created.push(JSON.parse((init?.body as string) ?? '{}'));
+          return new Response(JSON.stringify({ Invoice: { Id: 'should-not-be-created' } }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ QueryResponse: {} }), { status: 200 });
+      })
+    );
+    const t = await token(env.FINANCE_INTERNAL_SECRET!, ['finance.invoices.manage']);
+    const res = await app.fetch(
+      req('/invoices/create', {
+        method: 'POST',
+        headers: { 'X-Service-Assertion': t, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          confirm: true,
+          idempotencyKey: 'stale-check-1',
+          preview: [{ customerId: 'c-range', customerName: 'Patricia Range', amount: 10500, invoiceDate: '2026-07-20', dueDate: '2026-08-01' }]
+        })
+      }),
+      env
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { results: { status: string; reason?: string }[]; created: number; total: number };
+    expect(body.results).toEqual([{ name: 'Patricia Range', status: 'skipped', reason: 'Already invoiced this month' }]);
+    expect(body.created).toBe(0);
+    expect(created).toHaveLength(0);
   });
 });
 

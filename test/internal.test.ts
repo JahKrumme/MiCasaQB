@@ -168,6 +168,31 @@ describe('GET /internal/health/detailed', () => {
     expect(typeof body.gmailConfigured).toBe('boolean');
     expect(typeof body.groqConfigured).toBe('boolean');
   });
+
+  // Doubles as an honest "last token refresh" signal on the CRM's
+  // Integration Health page (see MiCasaCRM-workers'
+  // checkQuickBooksConnection) — a real, live-fetched fact, never a guess.
+  it('includes the access token expiry (a real fact, not a token value) when connected', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    const token = await signTestAssertion(env.FINANCE_INTERNAL_SECRET!, {
+      sub: 'admin@example.com', org: 'micasa', role: 'admin', permissions: ['finance.connectionHealth.view']
+    });
+    const res = await app.fetch(req('/health/detailed', { headers: { 'X-Service-Assertion': token } }), env);
+    const body = (await res.json()) as { accessTokenExpiresAt: number | null };
+    expect(typeof body.accessTokenExpiresAt).toBe('number');
+    expect(body.accessTokenExpiresAt).toBeGreaterThan(Date.now());
+  });
+
+  it('reports accessTokenExpiresAt as null when not connected', async () => {
+    const env = createTestEnv();
+    const token = await signTestAssertion(env.FINANCE_INTERNAL_SECRET!, {
+      sub: 'admin@example.com', org: 'micasa', role: 'admin', permissions: ['finance.connectionHealth.view']
+    });
+    const res = await app.fetch(req('/health/detailed', { headers: { 'X-Service-Assertion': token } }), env);
+    const body = (await res.json()) as { accessTokenExpiresAt: number | null };
+    expect(body.accessTokenExpiresAt).toBeNull();
+  });
 });
 
 describe('GET /internal/follow-up-summary', () => {

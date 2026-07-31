@@ -18,6 +18,7 @@ import { createOAuthState } from '../lib/oauthState';
 import { recordAuditEvent } from '../lib/auditLog';
 import { sha256Hex, randomToken } from '../lib/crypto';
 import { groqChatCompletion, GroqError, type ChatMessage } from '../lib/groq';
+import { dollarsToCents, centsToDollars, sumCents } from '../lib/money';
 import { getActiveCustomerNames, getResidentRates } from './qboApi';
 
 export const internalRoutes = new Hono<AppEnv>();
@@ -76,12 +77,19 @@ internalRoutes.get('/connection-status', requireServicePermission('finance.conne
 // verified working, which this page's own labels make clear.
 internalRoutes.get('/health/detailed', requireServicePermission('finance.connectionHealth.view'), async c => {
   const realmId = await requireConnectedRealm(c);
+  // accessTokenExpiresAt doubles as an honest "last token refresh" proxy on
+  // the CRM's Integration Health page: access tokens are short-lived
+  // (~1hr) and refreshed automatically on demand (see qboClient.ts), so a
+  // future expiry timestamp means a refresh genuinely happened recently —
+  // never a token/refresh-token value itself, only the expiry instant.
+  const connection = realmId ? await new TokenRepository(c.env).getConnection(realmId) : null;
   return c.json({
     oauthConnected: !!realmId,
     reconnectionRequired: !realmId,
     intuitConfigured: Boolean(c.env.INTUIT_CLIENT_ID && c.env.INTUIT_CLIENT_SECRET),
     gmailConfigured: Boolean(c.env.GMAIL_CLIENT_ID && c.env.GMAIL_CLIENT_SECRET && c.env.GMAIL_REFRESH_TOKEN),
-    groqConfigured: Boolean(c.env.GROQ_API_KEY)
+    groqConfigured: Boolean(c.env.GROQ_API_KEY),
+    accessTokenExpiresAt: connection?.bundle.access_token_expires_at ?? null
   });
 });
 
@@ -331,38 +339,92 @@ internalRoutes.get('/invoices/:id', requireServicePermission('finance.invoices.v
   }
 });
 
+// Builds this month's rate lookup keyed by *customer ID*, not display name.
+// The old implementation (still used for the chat assistant's "rate" line,
+// see getResidentRates() in qboApi.ts) keys by name, which is fine for a
+// human-readable chat summary but is the wrong key for anything that
+// creates real invoices: two customers can share/collide on a display name
+// in QuickBooks, and keying by name risks silently attaching one
+// customer's most-recent-invoice amount to a different customer's proposed
+// invoice. Keying by CustomerRef.value (the actual QuickBooks customer ID)
+// removes that failure mode entirely for the money-moving path.
+async function getResidentRatesByCustomerId(env: Env, realmId: string): Promise<Map<string, number>> {
+  const data = await qbQuery(env, realmId, 'SELECT * FROM Invoice ORDER BY TxnDate DESC MAXRESULTS 200');
+  const invoices = (data.QueryResponse?.Invoice ?? []) as QboInvoice[];
+  const ratesCents = new Map<string, number>();
+  for (const inv of invoices) {
+    const customerId = inv.CustomerRef?.value;
+    if (customerId && !ratesCents.has(customerId)) {
+      ratesCents.set(customerId, dollarsToCents(Number(inv.TotalAmt ?? 0)));
+    }
+  }
+  return ratesCents;
+}
+
+async function getInvoicedCustomerIdsThisMonth(env: Env, realmId: string): Promise<Set<string>> {
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+  const existingData = await qbQuery(env, realmId, `SELECT * FROM Invoice WHERE TxnDate >= '${firstDay}' AND TxnDate <= '${lastDay}' MAXRESULTS 100`);
+  const existingInvoices = (existingData.QueryResponse?.Invoice ?? []) as QboInvoice[];
+  return new Set(existingInvoices.map(inv => inv.CustomerRef?.value).filter((v): v is string => Boolean(v)));
+}
+
+// Normalized preview schema — see MiCasaCRM-workers financeService.ts's
+// normalizePreview(), which independently recomputes every total below
+// rather than trusting this response as-is. This route's own `summary` and
+// `verification` are a courtesy (and let this route's own regression tests
+// assert on them directly); the CRM never treats them as authoritative.
 internalRoutes.post('/invoices/prepare', requireServicePermission('finance.invoices.manage'), async c => {
   const realmId = await requireConnectedRealm(c);
   if (!realmId) return c.json({ error: 'QuickBooks is not connected', reconnectionRequired: true }, 503);
   try {
     const today = new Date();
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
-    const invoiceDate = new Date(today.getFullYear(), today.getMonth(), 20).toISOString().split('T')[0];
-    const dueDate = new Date(today.getFullYear(), today.getMonth() + 1, 1).toISOString().split('T')[0];
+    const billingPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const invoiceDate = new Date(today.getFullYear(), today.getMonth(), 20).toISOString().split('T')[0]!;
+    const dueDate = new Date(today.getFullYear(), today.getMonth() + 1, 1).toISOString().split('T')[0]!;
 
-    const [custData, existingData, rates] = await Promise.all([
+    const [custData, invoicedCustomerIds, ratesCents] = await Promise.all([
       qbQuery(c.env, realmId, 'SELECT * FROM Customer WHERE Active = true MAXRESULTS 100'),
-      qbQuery(c.env, realmId, `SELECT * FROM Invoice WHERE TxnDate >= '${firstDay}' AND TxnDate <= '${lastDay}' MAXRESULTS 100`),
-      getResidentRates(c.env, realmId)
+      getInvoicedCustomerIdsThisMonth(c.env, realmId),
+      getResidentRatesByCustomerId(c.env, realmId)
     ]);
 
     const customers = (custData.QueryResponse?.Customer ?? []) as QboCustomer[];
-    const existingInvoices = (existingData.QueryResponse?.Invoice ?? []) as QboInvoice[];
-    const invoicedCustomerIds = new Set(existingInvoices.map(inv => inv.CustomerRef?.value));
 
-    const preview = customers
-      .filter(cu => {
-        const name = cu.DisplayName || cu.FullyQualifiedName;
-        return name && rates[name] !== undefined;
-      })
-      .map(cu => {
-        const name = (cu.DisplayName || cu.FullyQualifiedName)!;
-        return { name, customerId: cu.Id, amount: rates[name], invoiceDate, dueDate, alreadyInvoiced: invoicedCustomerIds.has(cu.Id) };
-      });
+    const proposed: { customerId: string; customerName: string; amount: number; invoiceDate: string; dueDate: string }[] = [];
+    const skipped: { customerName: string; reason: string }[] = [];
+    const errors: string[] = [];
+    const seenCustomerIds = new Set<string>();
 
-    const total = preview.reduce((sum, r) => sum + (r.amount ?? 0), 0);
-    return c.json({ preview, invoiceDate, dueDate, total });
+    for (const cu of customers) {
+      const customerName = cu.DisplayName || cu.FullyQualifiedName;
+      const customerId = cu.Id;
+      if (!customerName || !customerId) continue; // not a resolvable billing record — not proposed, not skipped
+      const rateCents = ratesCents.get(customerId);
+      if (rateCents === undefined) continue; // no billing history for this customer — nothing to propose
+
+      if (invoicedCustomerIds.has(customerId)) {
+        skipped.push({ customerName, reason: 'Already invoiced this month' });
+        continue;
+      }
+      if (seenCustomerIds.has(customerId)) {
+        errors.push(`Duplicate customer ${customerName} returned by QuickBooks — duplicate-period detection is uncertain.`);
+        continue;
+      }
+      if (!Number.isFinite(rateCents) || rateCents <= 0) {
+        skipped.push({ customerName, reason: 'Invalid billing amount' });
+        continue;
+      }
+      seenCustomerIds.add(customerId);
+      proposed.push({ customerId, customerName, amount: centsToDollars(rateCents), invoiceDate, dueDate });
+    }
+
+    const proposedTotalCents = sumCents(proposed.map(p => dollarsToCents(p.amount)));
+    const summary = { proposedCount: proposed.length, proposedTotal: centsToDollars(proposedTotalCents), skippedCount: skipped.length };
+    const verification = { valid: errors.length === 0, errors };
+
+    return c.json({ billingPeriod, proposed, skipped, summary, verification });
   } catch (e) {
     return c.json(handleQboError(e, 'invoices/prepare'), 502);
   }
@@ -376,20 +438,33 @@ internalRoutes.post('/invoices/create', requireServicePermission('finance.invoic
     const body = (await c.req.json()) as {
       confirm?: unknown;
       idempotencyKey?: unknown;
-      preview?: { name: string; customerId?: string; amount: number; invoiceDate: string; dueDate: string; alreadyInvoiced: boolean }[];
+      preview?: { customerId?: string; customerName?: string; amount?: number; invoiceDate?: string; dueDate?: string }[];
     };
     if (body.confirm !== true) return c.json({ error: 'confirm:true is required' }, 400);
     if (typeof body.idempotencyKey !== 'string' || !body.idempotencyKey) return c.json({ error: 'idempotencyKey is required' }, 400);
     const preview = Array.isArray(body.preview) ? body.preview : [];
 
-    const itemData = await qbQuery(c.env, realmId, "SELECT * FROM Item WHERE Type = 'Service' MAXRESULTS 50");
+    // Re-verify against QuickBooks state fetched right now — never trust a
+    // client-round-tripped "already invoiced" flag, which may be stale by
+    // the time Confirm is clicked (a second staff member's batch, or simply
+    // time passing between preview and confirm).
+    const [invoicedCustomerIds, itemData] = await Promise.all([
+      getInvoicedCustomerIdsThisMonth(c.env, realmId),
+      qbQuery(c.env, realmId, "SELECT * FROM Item WHERE Type = 'Service' MAXRESULTS 50")
+    ]);
     const items = (itemData.QueryResponse?.Item ?? []) as { Id: string; Name: string }[];
     const roomItem = items.find(i => /room|board|care|resident/i.test(i.Name)) || items[0];
 
     const results: { name: string; status: string; reason?: string; invoiceId?: string; amount?: number }[] = [];
+    const seenInBatch = new Set<string>();
     for (const r of preview) {
-      if (!r.customerId) { results.push({ name: r.name, status: 'skipped', reason: 'Customer not found in QuickBooks' }); continue; }
-      if (r.alreadyInvoiced) { results.push({ name: r.name, status: 'skipped', reason: 'Already invoiced this month' }); continue; }
+      const name = r.customerName || 'Unknown';
+      if (!r.customerId) { results.push({ name, status: 'skipped', reason: 'Customer not found in QuickBooks' }); continue; }
+      if (invoicedCustomerIds.has(r.customerId)) { results.push({ name, status: 'skipped', reason: 'Already invoiced this month' }); continue; }
+      if (seenInBatch.has(r.customerId)) { results.push({ name, status: 'skipped', reason: 'Duplicate entry in this batch' }); continue; }
+      if (typeof r.amount !== 'number' || !Number.isFinite(r.amount) || r.amount <= 0) { results.push({ name, status: 'skipped', reason: 'Invalid amount' }); continue; }
+      if (!r.invoiceDate || !r.dueDate) { results.push({ name, status: 'skipped', reason: 'Missing invoice or due date' }); continue; }
+      seenInBatch.add(r.customerId);
       try {
         const result = await qbCreate(c.env, realmId, 'invoice', {
           Line: [{ Amount: r.amount, DetailType: 'SalesItemLineDetail', SalesItemLineDetail: { ItemRef: roomItem ? { value: roomItem.Id, name: roomItem.Name } : { value: '1', name: 'Services' }, Qty: 1, UnitPrice: r.amount } }],
@@ -397,14 +472,16 @@ internalRoutes.post('/invoices/create', requireServicePermission('finance.invoic
           TxnDate: r.invoiceDate,
           DueDate: r.dueDate
         });
-        results.push({ name: r.name, status: 'created', invoiceId: result.Invoice?.Id, amount: r.amount });
+        results.push({ name, status: 'created', invoiceId: result.Invoice?.Id, amount: r.amount });
+        invoicedCustomerIds.add(r.customerId);
       } catch (e) {
-        results.push({ name: r.name, status: 'error', reason: e instanceof Error ? e.message : 'Unknown error' });
+        results.push({ name, status: 'error', reason: e instanceof Error ? e.message : 'Unknown error' });
       }
     }
 
     const created = results.filter(r => r.status === 'created');
-    const total = created.reduce((sum, r) => sum + (r.amount ?? 0), 0);
+    const totalCents = sumCents(created.map(r => dollarsToCents(r.amount ?? 0)));
+    const total = centsToDollars(totalCents);
 
     await recordAuditEvent(c.env, {
       actor: null,

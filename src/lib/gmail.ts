@@ -32,7 +32,10 @@ function toBase64Url(input: string): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export async function sendEmail(env: Env, to: string, subject: string, html: string): Promise<void> {
+// Returns the Gmail API's own message id on success — callers that need an
+// audit trail (see routes/internal.ts's /gmail/test-send) can record it
+// without ever touching the access token or the message body themselves.
+export async function sendEmail(env: Env, to: string, subject: string, html: string): Promise<{ id: string | null }> {
   const accessToken = await getAccessToken(env);
   const message = [
     'From: Mi Casa Care Homes <micasacarehomes@gmail.com>',
@@ -57,4 +60,7 @@ export async function sendEmail(env: Env, to: string, subject: string, html: str
     console.error('[GMAIL AUTH FAIL] send failed, status=', response.status);
     throw new Error('Failed to send email');
   }
+
+  const body = (await response.json().catch(() => null)) as { id?: string } | null;
+  return { id: body?.id ?? null };
 }

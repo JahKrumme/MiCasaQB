@@ -24,7 +24,11 @@ export type AuditAction =
   | 'finance_customer_created'
   | 'finance_invoice_created'
   | 'finance_payment_recorded'
-  | 'finance_invoice_reminder_requested';
+  | 'finance_invoice_reminder_requested'
+  // Integration Health's "Send test email" action (Admin-only, explicit
+  // confirmation required — see routes/internal.ts's /gmail/test-send).
+  | 'gmail_test_send_succeeded'
+  | 'gmail_test_send_failed';
 
 export interface AuditActor {
   id: string;

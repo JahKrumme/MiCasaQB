@@ -18,6 +18,7 @@ import { createOAuthState } from '../lib/oauthState';
 import { recordAuditEvent } from '../lib/auditLog';
 import { sha256Hex, randomToken } from '../lib/crypto';
 import { groqChatCompletion, GroqError, type ChatMessage } from '../lib/groq';
+import { sendEmail } from '../lib/gmail';
 import { dollarsToCents, centsToDollars, sumCents } from '../lib/money';
 import { getActiveCustomerNames, getResidentRates } from './qboApi';
 
@@ -91,6 +92,47 @@ internalRoutes.get('/health/detailed', requireServicePermission('finance.connect
     groqConfigured: Boolean(c.env.GROQ_API_KEY),
     accessTokenExpiresAt: connection?.bundle.access_token_expires_at ?? null
   });
+});
+
+// Backs the CRM's Integration Health "Send test email" action (Admin-only,
+// explicit confirmation required — enforced on the CRM side, which also
+// owns recipient validation: default-to-self or another real admin email,
+// never an arbitrary address). This route only ever sends the one fixed,
+// clearly-labeled test message below — it is not a general-purpose send
+// endpoint, takes no subject/body from the caller, and returns nothing
+// more than success/failure plus the safe fields the CRM's Integration
+// Health audit trail needs (never the access token, never the message
+// body it just sent).
+internalRoutes.post('/gmail/test-send', requireServicePermission('finance.gmail.test'), async c => {
+  const body = (await c.req.json().catch(() => ({}))) as { recipientEmail?: unknown };
+  const recipientEmail = typeof body.recipientEmail === 'string' ? body.recipientEmail.trim() : '';
+  if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+    return c.json({ success: false, errorCategory: 'invalid_recipient' }, 400);
+  }
+  if (!c.env.GMAIL_CLIENT_ID || !c.env.GMAIL_CLIENT_SECRET || !c.env.GMAIL_REFRESH_TOKEN) {
+    return c.json({ success: false, errorCategory: 'not_configured' }, 503);
+  }
+  try {
+    const result = await sendEmail(
+      c.env,
+      recipientEmail,
+      'Mi Casa CRM email test',
+      '<p>This is a test message from Mi Casa CRM Integration Health. No action is required.</p>'
+    );
+    await recordAuditEvent(c.env, { actor: null, action: 'gmail_test_send_succeeded', metadata: { callerEmail: c.get('serviceAssertion')!.sub } });
+    return c.json({ success: true, messageId: result.id });
+  } catch (e) {
+    // Never the raw exception message (could echo response bodies) — a
+    // safe, small category only. getAccessToken() throws a distinct
+    // message for "not configured" (already handled above) vs a real
+    // token-refresh/send failure, so anything reaching here is a genuine
+    // auth or send failure, not a config gap.
+    const message = e instanceof Error ? e.message : '';
+    const errorCategory = message.includes('access token') ? 'auth_failed' : 'send_failed';
+    console.error('[GMAIL TEST SEND] failed, category=', errorCategory);
+    await recordAuditEvent(c.env, { actor: null, action: 'gmail_test_send_failed', metadata: { callerEmail: c.get('serviceAssertion')!.sub, errorCategory } });
+    return c.json({ success: false, errorCategory }, 502);
+  }
 });
 
 internalRoutes.get('/follow-up-summary', requireServicePermission('finance.followUps.view'), async c => {

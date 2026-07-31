@@ -135,6 +135,56 @@ internalRoutes.post('/gmail/test-send', requireServicePermission('finance.gmail.
   }
 });
 
+// Sends a signing-link invitation for the CRM's SortaSign module. Same
+// discipline as /gmail/test-send above — the email body is always built
+// here from a fixed, safe template, never from caller-supplied HTML/subject.
+// Only safe, non-sensitive fields are accepted (a display name, a document
+// title, the signing URL itself, and a human-readable expiry label) — never
+// resident/financial data, never the raw signing token (the URL already
+// contains it; this route never logs or echoes the URL back).
+internalRoutes.post('/gmail/signing-link', requireServicePermission('finance.gmail.signingLink'), async c => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    recipientEmail?: unknown; signerName?: unknown; documentTitle?: unknown; signingUrl?: unknown; expiresAtLabel?: unknown; reminder?: unknown;
+  };
+  const recipientEmail = typeof body.recipientEmail === 'string' ? body.recipientEmail.trim() : '';
+  const signerName = typeof body.signerName === 'string' ? body.signerName.trim().slice(0, 200) : '';
+  const documentTitle = typeof body.documentTitle === 'string' ? body.documentTitle.trim().slice(0, 200) : 'a document';
+  const signingUrl = typeof body.signingUrl === 'string' ? body.signingUrl.trim() : '';
+  const expiresAtLabel = typeof body.expiresAtLabel === 'string' ? body.expiresAtLabel.trim().slice(0, 100) : '';
+  const isReminder = body.reminder === true;
+
+  if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+    return c.json({ success: false, errorCategory: 'invalid_recipient' }, 400);
+  }
+  if (!signingUrl || !signingUrl.startsWith('https://')) {
+    return c.json({ success: false, errorCategory: 'invalid_signing_url' }, 400);
+  }
+  if (!c.env.GMAIL_CLIENT_ID || !c.env.GMAIL_CLIENT_SECRET || !c.env.GMAIL_REFRESH_TOKEN) {
+    return c.json({ success: false, errorCategory: 'not_configured' }, 503);
+  }
+
+  const subject = isReminder ? `Reminder: please sign "${documentTitle}"` : `Please sign "${documentTitle}"`;
+  const html = [
+    `<p>Hello${signerName ? ` ${signerName}` : ''},</p>`,
+    `<p>Mi Casa Care Homes has requested your signature on "${documentTitle}".</p>`,
+    `<p><a href="${signingUrl}">Click here to review and sign</a></p>`,
+    expiresAtLabel ? `<p>This link expires ${expiresAtLabel}.</p>` : '',
+    `<p>If you were not expecting this, you can safely ignore this email.</p>`
+  ].filter(Boolean).join('\n');
+
+  try {
+    const result = await sendEmail(c.env, recipientEmail, subject, html);
+    await recordAuditEvent(c.env, { actor: null, action: 'gmail_signing_link_sent', metadata: { callerEmail: c.get('serviceAssertion')!.sub, reminder: isReminder } });
+    return c.json({ success: true, messageId: result.id });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : '';
+    const errorCategory = message.includes('access token') ? 'auth_failed' : 'send_failed';
+    console.error('[GMAIL SIGNING LINK] failed, category=', errorCategory);
+    await recordAuditEvent(c.env, { actor: null, action: 'gmail_signing_link_failed', metadata: { callerEmail: c.get('serviceAssertion')!.sub, errorCategory, reminder: isReminder } });
+    return c.json({ success: false, errorCategory }, 502);
+  }
+});
+
 internalRoutes.get('/follow-up-summary', requireServicePermission('finance.followUps.view'), async c => {
   const realmId = await requireConnectedRealm(c);
   if (!realmId) return c.json({ error: 'QuickBooks is not connected', reconnectionRequired: true }, 503);

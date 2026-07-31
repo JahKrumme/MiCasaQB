@@ -28,7 +28,9 @@ export type AuditAction =
   // Integration Health's "Send test email" action (Admin-only, explicit
   // confirmation required — see routes/internal.ts's /gmail/test-send).
   | 'gmail_test_send_succeeded'
-  | 'gmail_test_send_failed';
+  | 'gmail_test_send_failed'
+  | 'gmail_signing_link_sent'
+  | 'gmail_signing_link_failed';
 
 export interface AuditActor {
   id: string;

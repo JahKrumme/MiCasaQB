@@ -205,44 +205,62 @@ describe('POST /api/cron/overdue-check — Gmail failures no longer produce an u
 });
 
 describe('POST /api/cron/overdue-check?dryRun=true — safe production verification', () => {
-  it('computes the real invoice count and total but never calls Gmail, and records no audit event', async () => {
+  it('computes the real invoice count and total, verifies Gmail auth via a token-refresh-only call, never calls the actual send endpoint, and records no audit event', async () => {
     const env = createTestEnv();
     await connectRealm(env);
     stubQboAndGmail({ invoices: [overdueInvoice(), overdueInvoice({ DocNumber: '1002' })] });
     const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check?dryRun=true`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; count: number; dryRun: boolean };
+    const body = (await res.json()) as { status: string; count: number; dryRun: boolean; gmailAuthOk: boolean };
     expect(body.status).toBe('ok');
     expect(body.count).toBe(2);
     expect(body.dryRun).toBe(true);
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('gmail') || String(url).includes('googleapis'))).toBe(false);
+    expect(body.gmailAuthOk).toBe(true);
+    // The token-refresh check is real and expected — only the actual
+    // message-send endpoint must never be called in dry-run mode.
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === GMAIL_SEND_URL)).toBe(false);
 
     const log = await listAuditLog(env, 10);
     expect(log.some(e => e.action === 'scheduled_overdue_check_succeeded' || e.action === 'scheduled_overdue_check_failed')).toBe(false);
   });
 
-  it('a dry run still safely reports zero invoices without recording an audit event', async () => {
+  it('a dry run still safely reports zero invoices, still checks Gmail auth, and records no audit event', async () => {
     const env = createTestEnv();
     await connectRealm(env);
     stubQboAndGmail({ invoices: [] });
     const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check?dryRun=true`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { count: number; dryRun: boolean };
+    const body = (await res.json()) as { count: number; dryRun: boolean; gmailAuthOk: boolean };
     expect(body.count).toBe(0);
     expect(body.dryRun).toBe(true);
+    expect(body.gmailAuthOk).toBe(true);
     const log = await listAuditLog(env, 10);
     expect(log.some(e => e.action === 'scheduled_overdue_check_succeeded')).toBe(false);
   });
 
-  it('even with broken Gmail credentials, a dry run succeeds since it never touches Gmail', async () => {
+  it('a dry run still succeeds (200, real invoice count) even when Gmail credentials are missing, but reports gmailAuthOk: false with a safe category', async () => {
     const env = createTestEnv({ GMAIL_CLIENT_ID: undefined, GMAIL_CLIENT_SECRET: undefined, GMAIL_REFRESH_TOKEN: undefined });
     await connectRealm(env);
     stubQboAndGmail({ invoices: [overdueInvoice()] });
     const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check?dryRun=true`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; count: number };
+    const body = (await res.json()) as { status: string; count: number; gmailAuthOk: boolean; gmailAuthErrorCategory: string };
     expect(body.status).toBe('ok');
     expect(body.count).toBe(1);
+    expect(body.gmailAuthOk).toBe(false);
+    expect(body.gmailAuthErrorCategory).toBe('not_configured');
+  });
+
+  it('a dry run reports gmailAuthOk: false with "auth_failed" when the Gmail refresh token itself is rejected — the real signal for "would today\'s real run actually fail"', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    stubQboAndGmail({ invoices: [overdueInvoice()], gmailTokenStatus: 401 });
+    const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check?dryRun=true`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { gmailAuthOk: boolean; gmailAuthErrorCategory: string };
+    expect(body.gmailAuthOk).toBe(false);
+    expect(body.gmailAuthErrorCategory).toBe('auth_failed');
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === GMAIL_SEND_URL)).toBe(false);
   });
 });
 

@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 import { qbQuery } from './qboClient';
-import { sendEmail } from './gmail';
+import { sendEmail, verifyGmailAuth } from './gmail';
 import { getRecipientEmails } from './users';
 import { recordAuditEvent } from './auditLog';
 
@@ -16,7 +16,7 @@ interface QboInvoice {
 export type ReportResult =
   | { status: 'no-token' }
   | { status: 'token-error'; message: string }
-  | { status: 'ok'; count: number; total?: number; runId?: string; dryRun?: boolean }
+  | { status: 'ok'; count: number; total?: number; runId?: string; dryRun?: boolean; gmailAuthOk?: boolean; gmailAuthErrorCategory?: 'not_configured' | 'auth_failed' }
   // Gmail (not QuickBooks) failed — the invoice query itself succeeded, but
   // sending the digest email threw. Distinct from 'token-error' (a
   // QuickBooks/Intuit problem) so callers/Integration Health can tell the
@@ -69,9 +69,19 @@ export async function runOverdueCheck(env: Env, realmId: string | null, opts: { 
   if (!Array.isArray(invoicesOrResult)) return invoicesOrResult;
 
   const invoices = invoicesOrResult;
+
+  // A dry run also verifies Gmail credentials via a real token-refresh-only
+  // call (verifyGmailAuth() — never sends anything) so a single safe call
+  // answers both "are there overdue invoices" and "would sending actually
+  // work right now" without ever risking a real reminder email.
+  const gmailAuth = opts.dryRun ? await verifyGmailAuth(env) : null;
+
   if (invoices.length === 0) {
     if (!opts.dryRun) await recordAuditEvent(env, { actor: null, action: 'scheduled_overdue_check_succeeded', metadata: { runId, reminderCount: 0 } });
-    return { status: 'ok', count: 0, runId, dryRun: opts.dryRun };
+    return {
+      status: 'ok', count: 0, runId, dryRun: opts.dryRun,
+      ...(gmailAuth ? { gmailAuthOk: gmailAuth.ok, gmailAuthErrorCategory: gmailAuth.ok ? undefined : gmailAuth.errorCategory } : {})
+    };
   }
 
   const totalBalance = invoices.reduce((sum, inv) => sum + Number(inv.Balance), 0);
@@ -79,7 +89,10 @@ export async function runOverdueCheck(env: Env, realmId: string | null, opts: { 
   if (opts.dryRun) {
     // Never builds/sends the email at all in dry-run mode — nothing here
     // can trigger a real reminder, regardless of how many invoices exist.
-    return { status: 'ok', count: invoices.length, total: totalBalance, runId, dryRun: true };
+    return {
+      status: 'ok', count: invoices.length, total: totalBalance, runId, dryRun: true,
+      gmailAuthOk: gmailAuth!.ok, gmailAuthErrorCategory: gmailAuth!.ok ? undefined : gmailAuth!.errorCategory
+    };
   }
 
   const html = `

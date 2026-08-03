@@ -341,6 +341,22 @@ describe('POST /api/cron/overdue-check — precise Gmail failure categories (not
     expect(body.errorCategory).toBe('invalid_grant');
   });
 
+  // The actual production failure this investigation traced (via a live
+  // wrangler tail capture): Google's token endpoint returning 401 with
+  // {"error":"invalid_client"} — the client_id/client_secret pair itself is
+  // rejected, NOT the refresh token. Distinct category, distinct root cause,
+  // distinct fix (nothing to do with the refresh token that had already
+  // passed verifyGmailAuth()'s own dry-run check earlier).
+  it('categorizes a rejected client_id/client_secret as invalid_client, distinct from invalid_grant', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    stubQboAndGmail({ invoices: [overdueInvoice()], gmailTokenStatus: 401, gmailTokenErrorCode: 'invalid_client' });
+    const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { errorCategory: string };
+    expect(body.errorCategory).toBe('invalid_client');
+  });
+
   it('categorizes a 429 from the token endpoint as rate_limited, distinct from invalid_grant', async () => {
     const env = createTestEnv();
     await connectRealm(env);
@@ -418,6 +434,19 @@ describe('POST /api/cron/overdue-check?diagnostic=true — exercises the real se
     expect(body.invoiceCount).toBe(1);
     expect(body.hasRecipients).toBe(true);
     expect(body.gmailAuthOk).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === GMAIL_SEND_URL)).toBe(false);
+  });
+
+  it('reports phase gmail_auth / category invalid_client when the client_id/client_secret pair itself is rejected — the real production finding', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    stubQboAndGmail({ invoices: [overdueInvoice()], gmailTokenStatus: 401, gmailTokenErrorCode: 'invalid_client' });
+    const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check?diagnostic=true`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; phase: string; category: string };
+    expect(body.ok).toBe(false);
+    expect(body.phase).toBe('gmail_auth');
+    expect(body.category).toBe('invalid_client');
     expect(fetchMock.mock.calls.some(([url]) => String(url) === GMAIL_SEND_URL)).toBe(false);
   });
 

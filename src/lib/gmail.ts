@@ -10,7 +10,7 @@ const SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
 // https://www.rfc-editor.org/rfc/rfc6749#section-5.2), safe to log/audit;
 // `error_description` (which can occasionally be more verbose) is
 // deliberately never captured here.
-export type GmailAuthErrorCategory = 'not_configured' | 'invalid_grant' | 'rate_limited' | 'transient' | 'unknown_auth_error';
+export type GmailAuthErrorCategory = 'not_configured' | 'invalid_client' | 'invalid_grant' | 'rate_limited' | 'transient' | 'unknown_auth_error';
 
 export class GmailAuthError extends Error {
   category: GmailAuthErrorCategory;
@@ -31,6 +31,15 @@ export class GmailAuthError extends Error {
 // hardcoded message rather than a real, structured failure reason.
 function categorizeGoogleError(status: number, errorCode: string | null): GmailAuthErrorCategory {
   if (errorCode === 'invalid_grant') return 'invalid_grant'; // refresh token itself is invalid/revoked/expired
+  // The client_id/client_secret pair itself is rejected — distinct from the
+  // refresh token being wrong. Common causes: the client secret was reset
+  // in Google Cloud Console after GMAIL_CLIENT_SECRET was last set, or the
+  // refresh token was actually issued to a *different* OAuth client (e.g.
+  // Google's own OAuth Playground default client, if "Use your own OAuth
+  // credentials" wasn't checked when generating it) than the one configured
+  // here — a token/client mismatch. No amount of retrying or re-verifying
+  // the refresh token alone will fix this.
+  if (errorCode === 'invalid_client') return 'invalid_client';
   if (errorCode === 'rate_limit_exceeded' || status === 429) return 'rate_limited';
   if (status >= 500) return 'transient';
   return 'unknown_auth_error';
@@ -139,7 +148,7 @@ export async function sendEmail(env: Env, to: string, subject: string, html: str
   return { id: body?.id ?? null };
 }
 
-export type GmailSendDiagnosticCategory = 'not_configured' | 'invalid_grant' | 'rate_limited' | 'transient' | 'unknown_auth_error' | 'message_build_failed';
+export type GmailSendDiagnosticCategory = 'not_configured' | 'invalid_client' | 'invalid_grant' | 'rate_limited' | 'transient' | 'unknown_auth_error' | 'message_build_failed';
 
 export interface GmailSendDiagnostic {
   ok: boolean;

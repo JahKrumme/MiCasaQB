@@ -29,7 +29,7 @@ export type ReportResult =
   // temporarily unhappy (worth retrying later, not a broken credential),
   // 'send_failed' means auth succeeded but the actual message send was
   // rejected.
-  | { status: 'gmail-error'; errorCategory: 'not_configured' | 'invalid_grant' | 'rate_limited' | 'transient' | 'unknown_auth_error' | 'send_failed'; runId: string };
+  | { status: 'gmail-error'; errorCategory: 'not_configured' | 'invalid_client' | 'invalid_grant' | 'rate_limited' | 'transient' | 'unknown_auth_error' | 'send_failed'; runId: string };
 
 function invoiceRows(invoices: QboInvoice[], today: Date, urgencyByDays: boolean): string {
   return invoices
@@ -178,7 +178,7 @@ export type OverdueDigestDiagnosticCategory =
   | 'no_token' | 'quickbooks_query_failed' // quickbooks_query phase
   | 'recipient_invalid' // recipients phase
   | 'message_build_failed' // message_build phase
-  | 'not_configured' | 'invalid_grant' | 'rate_limited' | 'transient' | 'unknown_auth_error'; // gmail_auth phase
+  | 'not_configured' | 'invalid_client' | 'invalid_grant' | 'rate_limited' | 'transient' | 'unknown_auth_error'; // gmail_auth phase
 
 export interface OverdueDigestDiagnostic {
   ok: boolean;

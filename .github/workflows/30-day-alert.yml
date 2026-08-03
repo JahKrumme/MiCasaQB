@@ -4,6 +4,17 @@ on:
   schedule:
     - cron: '0 13 * * 1'  # 8AM CST every Monday
   workflow_dispatch:
+    inputs:
+      dryRun:
+        description: 'Dry run — computes the 30+ day overdue-invoice count and verifies Gmail auth, but never sends the alert email. Only usable via manual dispatch; the scheduled trigger always runs for real.'
+        required: false
+        type: boolean
+        default: false
+      diagnostic:
+        description: 'Diagnostic — exercises the full real send path (query, recipients, message build, Gmail auth) and stops before the actual send, reporting exactly which phase would fail. Takes priority over dryRun if both are set. Only usable via manual dispatch.'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   run-30-day-alert:
@@ -11,11 +22,19 @@ jobs:
     steps:
       - name: Trigger 30-day overdue alert on the Worker
         run: |
+          URL="${{ vars.WORKER_URL }}/api/cron/30-day-alert"
+          if [ "${{ inputs.diagnostic }}" = "true" ]; then
+            URL="${URL}?diagnostic=true"
+            echo "Diagnostic — no alert email will be sent."
+          elif [ "${{ inputs.dryRun }}" = "true" ]; then
+            URL="${URL}?dryRun=true"
+            echo "Dry run — no alert email will be sent."
+          fi
           for i in {1..3}; do
             echo "Attempt $i of 3..."
             if curl --fail-with-body -sS -X POST \
                 -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
-                "${{ vars.WORKER_URL }}/api/cron/30-day-alert"; then
+                "$URL"; then
               echo "✓ 30-day alert triggered successfully"
               exit 0
             fi

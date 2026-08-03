@@ -4,6 +4,17 @@ on:
   schedule:
     - cron: '0 13 25 * *'  # 8AM CST on the 25th
   workflow_dispatch:
+    inputs:
+      dryRun:
+        description: 'Dry run — verifies Gmail auth, but never sends the reminder email. Only usable via manual dispatch; the scheduled trigger always runs for real.'
+        required: false
+        type: boolean
+        default: false
+      diagnostic:
+        description: 'Diagnostic — exercises the full real send path (recipients, message build, Gmail auth) and stops before the actual send, reporting exactly which phase would fail. Takes priority over dryRun if both are set. Only usable via manual dispatch.'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   run-kancare-reminder:
@@ -11,6 +22,14 @@ jobs:
     steps:
       - name: Trigger KanCare reminder on the Worker
         run: |
+          URL="${{ vars.WORKER_URL }}/api/cron/kancare-reminder"
+          if [ "${{ inputs.diagnostic }}" = "true" ]; then
+            URL="${URL}?diagnostic=true"
+            echo "Diagnostic — no reminder email will be sent."
+          elif [ "${{ inputs.dryRun }}" = "true" ]; then
+            URL="${URL}?dryRun=true"
+            echo "Dry run — no reminder email will be sent."
+          fi
           curl --fail-with-body -sS -X POST \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
-            "${{ vars.WORKER_URL }}/api/cron/kancare-reminder"
+            "$URL"

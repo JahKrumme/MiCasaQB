@@ -15,7 +15,7 @@ import { qbQuery, qbCreate, disconnectRealm, QboApiError } from '../lib/qboClien
 import { buildInvoiceQuery, InvalidQueryFilterError, type InvoiceQueryFilters } from '../lib/qbql';
 import { buildAuthorizeUrl } from '../lib/intuitOAuth';
 import { createOAuthState } from '../lib/oauthState';
-import { recordAuditEvent, getLatestAuditEvent } from '../lib/auditLog';
+import { recordAuditEvent, getLatestAuditEvent, type AuditAction } from '../lib/auditLog';
 import { sha256Hex, randomToken } from '../lib/crypto';
 import { groqChatCompletion, GroqError, type ChatMessage } from '../lib/groq';
 import { sendEmail } from '../lib/gmail';
@@ -71,6 +71,21 @@ internalRoutes.get('/connection-status', requireServicePermission('finance.conne
   return c.json({ connected: !!realmId, reconnectionRequired: !realmId });
 });
 
+// Shared "what happened on the last real run of this scheduled job" lookup
+// — used for all four scheduled financial email jobs below. Never a raw
+// exception message; only whatever safe fields the job itself audited
+// (a count and, on failure, a category).
+async function lastScheduledRunSummary(env: Env, succeededAction: AuditAction, failedAction: AuditAction) {
+  const event = await getLatestAuditEvent(env, [succeededAction, failedAction]);
+  if (!event) return null;
+  return {
+    status: event.action === succeededAction ? ('success' as const) : ('failure' as const),
+    at: event.createdAt,
+    reminderCount: typeof event.metadata?.reminderCount === 'number' ? event.metadata.reminderCount : null,
+    errorCategory: typeof event.metadata?.errorCategory === 'string' ? event.metadata.errorCategory : null
+  };
+}
+
 // Backs the CRM's Admin -> Integration Health page. Presence-only checks
 // (never a live network probe) for Gmail/Groq — same discipline as
 // financeConfigured()'s own env-presence check elsewhere in this file;
@@ -84,15 +99,12 @@ internalRoutes.get('/health/detailed', requireServicePermission('finance.connect
   // future expiry timestamp means a refresh genuinely happened recently —
   // never a token/refresh-token value itself, only the expiry instant.
   const connection = realmId ? await new TokenRepository(c.env).getConnection(realmId) : null;
-  const lastOverdueCheckEvent = await getLatestAuditEvent(c.env, ['scheduled_overdue_check_succeeded', 'scheduled_overdue_check_failed']);
-  const lastOverdueCheckRun = lastOverdueCheckEvent
-    ? {
-        status: lastOverdueCheckEvent.action === 'scheduled_overdue_check_succeeded' ? ('success' as const) : ('failure' as const),
-        at: lastOverdueCheckEvent.createdAt,
-        reminderCount: typeof lastOverdueCheckEvent.metadata?.reminderCount === 'number' ? lastOverdueCheckEvent.metadata.reminderCount : null,
-        errorCategory: typeof lastOverdueCheckEvent.metadata?.errorCategory === 'string' ? lastOverdueCheckEvent.metadata.errorCategory : null
-      }
-    : null;
+  const [lastOverdueCheckRun, last30DayAlertRun, lastMonthlyInvoicesRun, lastKanCareReminderRun] = await Promise.all([
+    lastScheduledRunSummary(c.env, 'scheduled_overdue_check_succeeded', 'scheduled_overdue_check_failed'),
+    lastScheduledRunSummary(c.env, 'scheduled_30_day_alert_succeeded', 'scheduled_30_day_alert_failed'),
+    lastScheduledRunSummary(c.env, 'scheduled_monthly_invoices_succeeded', 'scheduled_monthly_invoices_failed'),
+    lastScheduledRunSummary(c.env, 'scheduled_kancare_reminder_succeeded', 'scheduled_kancare_reminder_failed')
+  ]);
   return c.json({
     oauthConnected: !!realmId,
     reconnectionRequired: !realmId,
@@ -100,7 +112,10 @@ internalRoutes.get('/health/detailed', requireServicePermission('finance.connect
     gmailConfigured: Boolean(c.env.GMAIL_CLIENT_ID && c.env.GMAIL_CLIENT_SECRET && c.env.GMAIL_REFRESH_TOKEN),
     groqConfigured: Boolean(c.env.GROQ_API_KEY),
     accessTokenExpiresAt: connection?.bundle.access_token_expires_at ?? null,
-    lastOverdueCheckRun
+    lastOverdueCheckRun,
+    last30DayAlertRun,
+    lastMonthlyInvoicesRun,
+    lastKanCareReminderRun
   });
 });
 

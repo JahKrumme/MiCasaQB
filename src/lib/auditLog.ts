@@ -39,7 +39,19 @@ export type AuditAction =
   // count of emails), and — on failure — a safe errorCategory. Never a
   // customer name, invoice number, or dollar amount.
   | 'scheduled_overdue_check_succeeded'
-  | 'scheduled_overdue_check_failed';
+  | 'scheduled_overdue_check_failed'
+  // Same discipline, applied to the other three scheduled financial email
+  // jobs (see src/routes/cron.ts, .github/workflows/{30-day-alert,
+  // monthly-invoices,kancare-reminder}.yml) — a run id, a record count (0
+  // for KanCare's reminder, which has no underlying query), and on
+  // failure a safe errorCategory. Never a customer name, invoice number,
+  // or dollar amount.
+  | 'scheduled_30_day_alert_succeeded'
+  | 'scheduled_30_day_alert_failed'
+  | 'scheduled_monthly_invoices_succeeded'
+  | 'scheduled_monthly_invoices_failed'
+  | 'scheduled_kancare_reminder_succeeded'
+  | 'scheduled_kancare_reminder_failed';
 
 export interface AuditActor {
   id: string;

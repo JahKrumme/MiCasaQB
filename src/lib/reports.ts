@@ -232,17 +232,58 @@ export async function diagnoseOverdueDigest(env: Env, realmId: string | null): P
   return { ok: true, phase: 'ready', category: null, invoiceCount: invoices.length, hasRecipients: true, gmailAuthOk: true, messageBuilt: true };
 }
 
-export async function run30DayAlert(env: Env, realmId: string | null): Promise<ReportResult> {
-  const today = new Date();
-  const cutoff = new Date(today);
-  cutoff.setDate(cutoff.getDate() - 30);
-  const invoicesOrResult = await runOverdueQuery(env, realmId, cutoff.toISOString().split('T')[0]!);
-  if (!Array.isArray(invoicesOrResult)) return invoicesOrResult;
+// Shared diagnostic shape for the three jobs below (distinct from
+// OverdueDigestDiagnostic above, which already shipped with its own
+// `invoiceCount`-based shape — left untouched rather than retrofitted, per
+// "don't redesign what's already fixed"). `job` identifies which one ran;
+// `recordCount` is null for kancare_reminder, which has no underlying
+// QuickBooks query at all.
+export type ScheduledJobName = '30_day_alert' | 'monthly_invoices' | 'kancare_reminder';
+export type ScheduledJobDiagnosticPhase = 'quickbooks_query' | 'recipients' | 'message_build' | 'gmail_auth' | 'ready';
+export type ScheduledJobDiagnosticCategory =
+  | 'no_token' | 'quickbooks_query_failed' // quickbooks_query phase
+  | 'recipient_invalid' // recipients phase
+  | 'message_build_failed' // message_build phase
+  | 'not_configured' | 'invalid_client' | 'invalid_grant' | 'rate_limited' | 'transient' | 'unknown_auth_error'; // gmail_auth phase
 
-  const invoices = invoicesOrResult;
-  if (invoices.length === 0) return { status: 'ok', count: 0 };
+export interface ScheduledJobDiagnostic {
+  ok: boolean;
+  job: ScheduledJobName;
+  phase: ScheduledJobDiagnosticPhase;
+  category: ScheduledJobDiagnosticCategory | null;
+  recordCount: number | null;
+  hasRecipients: boolean;
+  gmailAuthOk: boolean;
+  messageBuilt: boolean;
+}
 
-  const totalBalance = invoices.reduce((sum, inv) => sum + Number(inv.Balance), 0);
+// Validates recipients exactly like diagnoseOverdueDigest above — shared
+// here rather than duplicated a third/fourth time.
+async function validateRecipients(env: Env): Promise<{ recipients: string; hasRecipients: boolean }> {
+  const recipients = await getRecipientEmails(env);
+  const recipientList = recipients.split(',').map(r => r.trim()).filter(Boolean);
+  const hasRecipients = recipientList.length > 0 && recipientList.every(r => EMAIL_RE.test(r));
+  return { recipients, hasRecipients };
+}
+
+// Runs diagnoseGmailSend() and maps its result into a ScheduledJobDiagnostic
+// for the given job/recordCount — shared tail end for all three diagnose*
+// functions below.
+async function finishJobDiagnostic(env: Env, job: ScheduledJobName, recordCount: number, recipients: string, subject: string, html: string): Promise<ScheduledJobDiagnostic> {
+  const gmailDiag = await diagnoseGmailSend(env, recipients, subject, html);
+  if (!gmailDiag.ok) {
+    return {
+      ok: false, job,
+      phase: gmailDiag.phase === 'message_build' ? 'message_build' : 'gmail_auth',
+      category: gmailDiag.category,
+      recordCount, hasRecipients: true,
+      gmailAuthOk: gmailDiag.gmailAuthOk, messageBuilt: gmailDiag.messageBuilt
+    };
+  }
+  return { ok: true, job, phase: 'ready', category: null, recordCount, hasRecipients: true, gmailAuthOk: true, messageBuilt: true };
+}
+
+function build30DayAlertEmail(invoices: QboInvoice[], today: Date, totalBalance: number): { subject: string; html: string } {
   const html = `
     <div style="font-family:sans-serif;max-width:700px;margin:0 auto;padding:24px">
       <h2 style="color:#c0392b">Action Required: Invoices 30+ Days Overdue</h2>
@@ -264,28 +305,91 @@ export async function run30DayAlert(env: Env, realmId: string | null): Promise<R
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
       <p style="color:#999;font-size:12px">Sent from your QuickBooks integration</p>
     </div>`;
-
-  await sendEmail(env, await getRecipientEmails(env), 'Action Required: Invoices 30+ Days Overdue', html);
-  return { status: 'ok', count: invoices.length, total: totalBalance };
+  return { subject: 'Action Required: Invoices 30+ Days Overdue', html };
 }
 
-export async function runMonthlyInvoices(env: Env, realmId: string | null): Promise<ReportResult> {
-  if (!realmId) return { status: 'no-token' };
-  const now = new Date();
-  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]!;
-  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]!;
-  const nextMonthLabel = new Date(now.getFullYear(), now.getMonth() + 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+export async function run30DayAlert(env: Env, realmId: string | null, opts: { dryRun?: boolean } = {}): Promise<ReportResult> {
+  const runId = crypto.randomUUID();
+  const today = new Date();
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() - 30);
+  const invoicesOrResult = await runOverdueQuery(env, realmId, cutoff.toISOString().split('T')[0]!);
+  if (!Array.isArray(invoicesOrResult)) return invoicesOrResult;
 
-  let invoices: QboInvoice[];
-  try {
-    const data = await qbQuery(env, realmId, `SELECT * FROM Invoice WHERE TxnDate >= '${firstDay}' AND TxnDate <= '${lastDay}'`);
-    invoices = (data.QueryResponse?.Invoice ?? []) as QboInvoice[];
-  } catch (e) {
-    return { status: 'token-error', message: e instanceof Error ? e.message : 'Unknown error' };
+  const invoices = invoicesOrResult;
+  const gmailAuth = opts.dryRun ? await verifyGmailAuth(env) : null;
+
+  if (invoices.length === 0) {
+    if (!opts.dryRun) {
+      await recordAuditEvent(env, { actor: null, action: 'scheduled_30_day_alert_succeeded', metadata: { runId, reminderCount: 0 } }).catch(auditErr => {
+        console.error('[CRON 30-day-alert] failed to record success audit event, runId=', runId, auditErr instanceof Error ? auditErr.message : 'unknown');
+      });
+    }
+    return {
+      status: 'ok', count: 0, runId, dryRun: opts.dryRun,
+      ...(gmailAuth ? { gmailAuthOk: gmailAuth.ok, gmailAuthErrorCategory: gmailAuth.ok ? undefined : gmailAuth.errorCategory } : {})
+    };
   }
 
-  if (invoices.length === 0) return { status: 'ok', count: 0 };
+  const totalBalance = invoices.reduce((sum, inv) => sum + Number(inv.Balance), 0);
 
+  if (opts.dryRun) {
+    return {
+      status: 'ok', count: invoices.length, total: totalBalance, runId, dryRun: true,
+      gmailAuthOk: gmailAuth!.ok, gmailAuthErrorCategory: gmailAuth!.ok ? undefined : gmailAuth!.errorCategory
+    };
+  }
+
+  const { subject, html } = build30DayAlertEmail(invoices, today, totalBalance);
+
+  if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) {
+    await recordAuditEvent(env, { actor: null, action: 'scheduled_30_day_alert_failed', metadata: { runId, reminderCount: invoices.length, errorCategory: 'not_configured' } });
+    return { status: 'gmail-error', errorCategory: 'not_configured', runId };
+  }
+
+  try {
+    await sendEmail(env, await getRecipientEmails(env), subject, html);
+  } catch (e) {
+    const errorCategory = e instanceof GmailAuthError ? e.category : 'send_failed';
+    console.error('[CRON 30-day-alert] send failed, runId=', runId, 'category=', errorCategory);
+    await recordAuditEvent(env, { actor: null, action: 'scheduled_30_day_alert_failed', metadata: { runId, reminderCount: invoices.length, errorCategory } }).catch(auditErr => {
+      console.error('[CRON 30-day-alert] failed to record failure audit event, runId=', runId, auditErr instanceof Error ? auditErr.message : 'unknown');
+    });
+    return { status: 'gmail-error', errorCategory, runId };
+  }
+
+  await recordAuditEvent(env, { actor: null, action: 'scheduled_30_day_alert_succeeded', metadata: { runId, reminderCount: invoices.length } }).catch(auditErr => {
+    console.error('[CRON 30-day-alert] failed to record success audit event, runId=', runId, auditErr instanceof Error ? auditErr.message : 'unknown');
+  });
+  return { status: 'ok', count: invoices.length, total: totalBalance, runId };
+}
+
+// Same discipline as diagnoseOverdueDigest — real QuickBooks query, real
+// digest payload, real recipient validation, real Gmail auth check, stops
+// before the send network call under every outcome.
+export async function diagnose30DayAlert(env: Env, realmId: string | null): Promise<ScheduledJobDiagnostic> {
+  const job: ScheduledJobName = '30_day_alert';
+  const today = new Date();
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() - 30);
+  const invoicesOrResult = await runOverdueQuery(env, realmId, cutoff.toISOString().split('T')[0]!);
+  if (!Array.isArray(invoicesOrResult)) {
+    const category = invoicesOrResult.status === 'no-token' ? 'no_token' : 'quickbooks_query_failed';
+    return { ok: false, job, phase: 'quickbooks_query', category, recordCount: 0, hasRecipients: false, gmailAuthOk: false, messageBuilt: false };
+  }
+  const invoices = invoicesOrResult;
+  const totalBalance = invoices.reduce((sum, inv) => sum + Number(inv.Balance), 0);
+
+  const { recipients, hasRecipients } = await validateRecipients(env);
+  if (!hasRecipients) {
+    return { ok: false, job, phase: 'recipients', category: 'recipient_invalid', recordCount: invoices.length, hasRecipients: false, gmailAuthOk: false, messageBuilt: false };
+  }
+
+  const { subject, html } = build30DayAlertEmail(invoices, today, totalBalance);
+  return finishJobDiagnostic(env, job, invoices.length, recipients, subject, html);
+}
+
+function buildMonthlyInvoiceEmail(invoices: QboInvoice[], nextMonthLabel: string, totalAmt: number): { subject: string; html: string } {
   const rows = invoices
     .map(
       inv => `
@@ -298,8 +402,6 @@ export async function runMonthlyInvoices(env: Env, realmId: string | null): Prom
     </tr>`
     )
     .join('');
-  const totalAmt = invoices.reduce((sum, inv) => sum + Number(inv.TotalAmt), 0);
-
   const html = `
     <div style="font-family:sans-serif;max-width:700px;margin:0 auto;padding:24px">
       <h2 style="color:#1a1a1a">Mi Casa — Your Invoice for ${nextMonthLabel} is Ready</h2>
@@ -322,13 +424,101 @@ export async function runMonthlyInvoices(env: Env, realmId: string | null): Prom
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
       <p style="color:#999;font-size:12px">Sent from your QuickBooks integration</p>
     </div>`;
-
-  await sendEmail(env, await getRecipientEmails(env), `Mi Casa — Your Invoice for ${nextMonthLabel} is Ready`, html);
-  return { status: 'ok', count: invoices.length, total: totalAmt };
+  return { subject: `Mi Casa — Your Invoice for ${nextMonthLabel} is Ready`, html };
 }
 
-export async function runKanCareReminder(env: Env): Promise<void> {
-  const monthLabel = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+async function queryMonthlyInvoices(env: Env, realmId: string | null): Promise<QboInvoice[] | ReportResult> {
+  if (!realmId) return { status: 'no-token' };
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]!;
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]!;
+  try {
+    const data = await qbQuery(env, realmId, `SELECT * FROM Invoice WHERE TxnDate >= '${firstDay}' AND TxnDate <= '${lastDay}'`);
+    return (data.QueryResponse?.Invoice ?? []) as QboInvoice[];
+  } catch (e) {
+    return { status: 'token-error', message: e instanceof Error ? e.message : 'Unknown error' };
+  }
+}
+
+function nextMonthLabelFor(now: Date): string {
+  return new Date(now.getFullYear(), now.getMonth() + 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+}
+
+export async function runMonthlyInvoices(env: Env, realmId: string | null, opts: { dryRun?: boolean } = {}): Promise<ReportResult> {
+  const runId = crypto.randomUUID();
+  const invoicesOrResult = await queryMonthlyInvoices(env, realmId);
+  if (!Array.isArray(invoicesOrResult)) return invoicesOrResult;
+
+  const invoices = invoicesOrResult;
+  const gmailAuth = opts.dryRun ? await verifyGmailAuth(env) : null;
+
+  if (invoices.length === 0) {
+    if (!opts.dryRun) {
+      await recordAuditEvent(env, { actor: null, action: 'scheduled_monthly_invoices_succeeded', metadata: { runId, reminderCount: 0 } }).catch(auditErr => {
+        console.error('[CRON monthly-invoices] failed to record success audit event, runId=', runId, auditErr instanceof Error ? auditErr.message : 'unknown');
+      });
+    }
+    return {
+      status: 'ok', count: 0, runId, dryRun: opts.dryRun,
+      ...(gmailAuth ? { gmailAuthOk: gmailAuth.ok, gmailAuthErrorCategory: gmailAuth.ok ? undefined : gmailAuth.errorCategory } : {})
+    };
+  }
+
+  const nextMonthLabel = nextMonthLabelFor(new Date());
+  const totalAmt = invoices.reduce((sum, inv) => sum + Number(inv.TotalAmt), 0);
+
+  if (opts.dryRun) {
+    return {
+      status: 'ok', count: invoices.length, total: totalAmt, runId, dryRun: true,
+      gmailAuthOk: gmailAuth!.ok, gmailAuthErrorCategory: gmailAuth!.ok ? undefined : gmailAuth!.errorCategory
+    };
+  }
+
+  const { subject, html } = buildMonthlyInvoiceEmail(invoices, nextMonthLabel, totalAmt);
+
+  if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) {
+    await recordAuditEvent(env, { actor: null, action: 'scheduled_monthly_invoices_failed', metadata: { runId, reminderCount: invoices.length, errorCategory: 'not_configured' } });
+    return { status: 'gmail-error', errorCategory: 'not_configured', runId };
+  }
+
+  try {
+    await sendEmail(env, await getRecipientEmails(env), subject, html);
+  } catch (e) {
+    const errorCategory = e instanceof GmailAuthError ? e.category : 'send_failed';
+    console.error('[CRON monthly-invoices] send failed, runId=', runId, 'category=', errorCategory);
+    await recordAuditEvent(env, { actor: null, action: 'scheduled_monthly_invoices_failed', metadata: { runId, reminderCount: invoices.length, errorCategory } }).catch(auditErr => {
+      console.error('[CRON monthly-invoices] failed to record failure audit event, runId=', runId, auditErr instanceof Error ? auditErr.message : 'unknown');
+    });
+    return { status: 'gmail-error', errorCategory, runId };
+  }
+
+  await recordAuditEvent(env, { actor: null, action: 'scheduled_monthly_invoices_succeeded', metadata: { runId, reminderCount: invoices.length } }).catch(auditErr => {
+    console.error('[CRON monthly-invoices] failed to record success audit event, runId=', runId, auditErr instanceof Error ? auditErr.message : 'unknown');
+  });
+  return { status: 'ok', count: invoices.length, total: totalAmt, runId };
+}
+
+export async function diagnoseMonthlyInvoices(env: Env, realmId: string | null): Promise<ScheduledJobDiagnostic> {
+  const job: ScheduledJobName = 'monthly_invoices';
+  const invoicesOrResult = await queryMonthlyInvoices(env, realmId);
+  if (!Array.isArray(invoicesOrResult)) {
+    const category = invoicesOrResult.status === 'no-token' ? 'no_token' : 'quickbooks_query_failed';
+    return { ok: false, job, phase: 'quickbooks_query', category, recordCount: 0, hasRecipients: false, gmailAuthOk: false, messageBuilt: false };
+  }
+  const invoices = invoicesOrResult;
+
+  const { recipients, hasRecipients } = await validateRecipients(env);
+  if (!hasRecipients) {
+    return { ok: false, job, phase: 'recipients', category: 'recipient_invalid', recordCount: invoices.length, hasRecipients: false, gmailAuthOk: false, messageBuilt: false };
+  }
+
+  const nextMonthLabel = nextMonthLabelFor(new Date());
+  const totalAmt = invoices.reduce((sum, inv) => sum + Number(inv.TotalAmt), 0);
+  const { subject, html } = buildMonthlyInvoiceEmail(invoices, nextMonthLabel, totalAmt);
+  return finishJobDiagnostic(env, job, invoices.length, recipients, subject, html);
+}
+
+function buildKanCareReminderEmail(monthLabel: string): { subject: string; html: string } {
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
       <h2 style="color:#1a1a1a">KanCare Billing Deadline Reminder</h2>
@@ -343,6 +533,52 @@ export async function runKanCareReminder(env: Env): Promise<void> {
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
       <p style="color:#999;font-size:12px">Sent from your QuickBooks integration</p>
     </div>`;
+  return { subject: 'KanCare Billing Deadline Reminder', html };
+}
 
-  await sendEmail(env, await getRecipientEmails(env), 'KanCare Billing Deadline Reminder', html);
+// No QuickBooks query at all (this reminder is a flat monthly nudge, not
+// data-driven) — realmId is never needed, and `count`/`recordCount` is
+// always 0/null rather than implying a query that never ran.
+export async function runKanCareReminder(env: Env, opts: { dryRun?: boolean } = {}): Promise<ReportResult> {
+  const runId = crypto.randomUUID();
+  const monthLabel = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+  const { subject, html } = buildKanCareReminderEmail(monthLabel);
+
+  if (opts.dryRun) {
+    const gmailAuth = await verifyGmailAuth(env);
+    return { status: 'ok', count: 0, runId, dryRun: true, gmailAuthOk: gmailAuth.ok, gmailAuthErrorCategory: gmailAuth.ok ? undefined : gmailAuth.errorCategory };
+  }
+
+  if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) {
+    await recordAuditEvent(env, { actor: null, action: 'scheduled_kancare_reminder_failed', metadata: { runId, reminderCount: 0, errorCategory: 'not_configured' } });
+    return { status: 'gmail-error', errorCategory: 'not_configured', runId };
+  }
+
+  try {
+    await sendEmail(env, await getRecipientEmails(env), subject, html);
+  } catch (e) {
+    const errorCategory = e instanceof GmailAuthError ? e.category : 'send_failed';
+    console.error('[CRON kancare-reminder] send failed, runId=', runId, 'category=', errorCategory);
+    await recordAuditEvent(env, { actor: null, action: 'scheduled_kancare_reminder_failed', metadata: { runId, reminderCount: 0, errorCategory } }).catch(auditErr => {
+      console.error('[CRON kancare-reminder] failed to record failure audit event, runId=', runId, auditErr instanceof Error ? auditErr.message : 'unknown');
+    });
+    return { status: 'gmail-error', errorCategory, runId };
+  }
+
+  await recordAuditEvent(env, { actor: null, action: 'scheduled_kancare_reminder_succeeded', metadata: { runId, reminderCount: 0 } }).catch(auditErr => {
+    console.error('[CRON kancare-reminder] failed to record success audit event, runId=', runId, auditErr instanceof Error ? auditErr.message : 'unknown');
+  });
+  return { status: 'ok', count: 0, runId };
+}
+
+export async function diagnoseKanCareReminder(env: Env): Promise<ScheduledJobDiagnostic> {
+  const job: ScheduledJobName = 'kancare_reminder';
+  const { recipients, hasRecipients } = await validateRecipients(env);
+  if (!hasRecipients) {
+    return { ok: false, job, phase: 'recipients', category: 'recipient_invalid', recordCount: null, hasRecipients: false, gmailAuthOk: false, messageBuilt: false };
+  }
+  const monthLabel = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+  const { subject, html } = buildKanCareReminderEmail(monthLabel);
+  const result = await finishJobDiagnostic(env, job, 0, recipients, subject, html);
+  return { ...result, recordCount: null };
 }

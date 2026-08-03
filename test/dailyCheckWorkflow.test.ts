@@ -17,12 +17,26 @@ describe('GitHub Actions Daily Overdue Check workflow', () => {
     expect(workflowSource).toMatch(/default:\s*false/);
   });
 
-  it('the scheduled trigger never sets dryRun — only a manual dispatch can enable it', () => {
+  it('exposes a diagnostic input for full-path safe investigation, defaulting to false', () => {
+    expect(workflowSource).toMatch(/diagnostic:/);
+    expect(workflowSource).toMatch(/URL="\$\{URL\}\?diagnostic=true"/);
+  });
+
+  it('diagnostic takes priority over dryRun when both are set', () => {
+    const runBlock = workflowSource.split('run: |')[1]!;
+    const diagnosticIndex = runBlock.indexOf('inputs.diagnostic');
+    const dryRunIndex = runBlock.indexOf('inputs.dryRun');
+    expect(diagnosticIndex).toBeGreaterThan(-1);
+    expect(diagnosticIndex).toBeLessThan(dryRunIndex);
+  });
+
+  it('the scheduled trigger never sets dryRun or diagnostic — only a manual dispatch can enable either', () => {
     // The cron trigger block itself carries no inputs at all (inputs only
     // exist under workflow_dispatch) — a scheduled run has no way to read
-    // inputs.dryRun as anything other than empty/false.
+    // inputs.dryRun/inputs.diagnostic as anything other than empty/false.
     const scheduleBlock = workflowSource.split('workflow_dispatch:')[0]!;
     expect(scheduleBlock).not.toMatch(/dryRun/);
+    expect(scheduleBlock).not.toMatch(/diagnostic/);
   });
 
   it('passes the shared secret via X-Cron-Secret, from GitHub secrets only', () => {

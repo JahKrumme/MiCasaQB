@@ -25,6 +25,25 @@ async function getAccessToken(env: Env): Promise<string> {
   return json.access_token;
 }
 
+// Verifies the Gmail OAuth credentials actually work by performing a real
+// token refresh against Google — and nothing else. A refresh-token exchange
+// never sends an email, so this is safe to call from a scheduled job's own
+// dry-run/diagnostic path (see src/routes/cron.ts) or any other caller that
+// needs to know "is Gmail actually authenticated right now" without risking
+// a real send. Mirrors the same 'not_configured'/'auth_failed' category
+// vocabulary routes/internal.ts's /gmail/test-send already established.
+export async function verifyGmailAuth(env: Env): Promise<{ ok: true } | { ok: false; errorCategory: 'not_configured' | 'auth_failed' }> {
+  if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) {
+    return { ok: false, errorCategory: 'not_configured' };
+  }
+  try {
+    await getAccessToken(env);
+    return { ok: true };
+  } catch {
+    return { ok: false, errorCategory: 'auth_failed' };
+  }
+}
+
 function toBase64Url(input: string): string {
   const bytes = new TextEncoder().encode(input);
   let binary = '';

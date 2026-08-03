@@ -30,7 +30,16 @@ export type AuditAction =
   | 'gmail_test_send_succeeded'
   | 'gmail_test_send_failed'
   | 'gmail_signing_link_sent'
-  | 'gmail_signing_link_failed';
+  | 'gmail_signing_link_failed'
+  // Recorded from the Daily Overdue Check scheduled job (see
+  // src/routes/cron.ts, .github/workflows/daily-check.yml) — every real
+  // (non-dry-run) invocation records exactly one of these two outcomes so a
+  // failed scheduled run is never silent. metadata only ever carries a
+  // runId, reminderCount (the number of overdue invoices reported, not a
+  // count of emails), and — on failure — a safe errorCategory. Never a
+  // customer name, invoice number, or dollar amount.
+  | 'scheduled_overdue_check_succeeded'
+  | 'scheduled_overdue_check_failed';
 
 export interface AuditActor {
   id: string;
@@ -113,4 +122,16 @@ export async function listAuditLog(env: Env, limit = 200): Promise<AuditLogEntry
     .bind(limit)
     .all<AuditLogRow>();
   return (results ?? []).map(toEntry);
+}
+
+// The most recent entry matching any of the given actions — used by
+// /internal/health/detailed to surface "what happened on the last
+// scheduled run" without the caller needing to fetch/filter the full log.
+export async function getLatestAuditEvent(env: Env, actions: AuditAction[]): Promise<AuditLogEntry | null> {
+  if (actions.length === 0) return null;
+  const placeholders = actions.map(() => '?').join(', ');
+  const row = await env.DB.prepare(
+    `SELECT * FROM audit_log WHERE action IN (${placeholders}) ORDER BY created_at DESC LIMIT 1`
+  ).bind(...actions).first<AuditLogRow>();
+  return row ? toEntry(row) : null;
 }

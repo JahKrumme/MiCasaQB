@@ -15,7 +15,7 @@ import { qbQuery, qbCreate, disconnectRealm, QboApiError } from '../lib/qboClien
 import { buildInvoiceQuery, InvalidQueryFilterError, type InvoiceQueryFilters } from '../lib/qbql';
 import { buildAuthorizeUrl } from '../lib/intuitOAuth';
 import { createOAuthState } from '../lib/oauthState';
-import { recordAuditEvent } from '../lib/auditLog';
+import { recordAuditEvent, getLatestAuditEvent } from '../lib/auditLog';
 import { sha256Hex, randomToken } from '../lib/crypto';
 import { groqChatCompletion, GroqError, type ChatMessage } from '../lib/groq';
 import { sendEmail } from '../lib/gmail';
@@ -84,13 +84,23 @@ internalRoutes.get('/health/detailed', requireServicePermission('finance.connect
   // future expiry timestamp means a refresh genuinely happened recently —
   // never a token/refresh-token value itself, only the expiry instant.
   const connection = realmId ? await new TokenRepository(c.env).getConnection(realmId) : null;
+  const lastOverdueCheckEvent = await getLatestAuditEvent(c.env, ['scheduled_overdue_check_succeeded', 'scheduled_overdue_check_failed']);
+  const lastOverdueCheckRun = lastOverdueCheckEvent
+    ? {
+        status: lastOverdueCheckEvent.action === 'scheduled_overdue_check_succeeded' ? ('success' as const) : ('failure' as const),
+        at: lastOverdueCheckEvent.createdAt,
+        reminderCount: typeof lastOverdueCheckEvent.metadata?.reminderCount === 'number' ? lastOverdueCheckEvent.metadata.reminderCount : null,
+        errorCategory: typeof lastOverdueCheckEvent.metadata?.errorCategory === 'string' ? lastOverdueCheckEvent.metadata.errorCategory : null
+      }
+    : null;
   return c.json({
     oauthConnected: !!realmId,
     reconnectionRequired: !realmId,
     intuitConfigured: Boolean(c.env.INTUIT_CLIENT_ID && c.env.INTUIT_CLIENT_SECRET),
     gmailConfigured: Boolean(c.env.GMAIL_CLIENT_ID && c.env.GMAIL_CLIENT_SECRET && c.env.GMAIL_REFRESH_TOKEN),
     groqConfigured: Boolean(c.env.GROQ_API_KEY),
-    accessTokenExpiresAt: connection?.bundle.access_token_expires_at ?? null
+    accessTokenExpiresAt: connection?.bundle.access_token_expires_at ?? null,
+    lastOverdueCheckRun
   });
 });
 

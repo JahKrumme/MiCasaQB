@@ -2,6 +2,7 @@ import type { Env } from '../env';
 import { qbQuery } from './qboClient';
 import { sendEmail } from './gmail';
 import { getRecipientEmails } from './users';
+import { recordAuditEvent } from './auditLog';
 
 interface QboInvoice {
   DocNumber?: string;
@@ -15,7 +16,13 @@ interface QboInvoice {
 export type ReportResult =
   | { status: 'no-token' }
   | { status: 'token-error'; message: string }
-  | { status: 'ok'; count: number; total?: number };
+  | { status: 'ok'; count: number; total?: number; runId?: string; dryRun?: boolean }
+  // Gmail (not QuickBooks) failed — the invoice query itself succeeded, but
+  // sending the digest email threw. Distinct from 'token-error' (a
+  // QuickBooks/Intuit problem) so callers/Integration Health can tell the
+  // two apart. errorCategory is a small, closed, safe set — never a raw
+  // exception message (see runOverdueCheck below).
+  | { status: 'gmail-error'; errorCategory: 'not_configured' | 'auth_failed' | 'send_failed'; runId: string };
 
 function invoiceRows(invoices: QboInvoice[], today: Date, urgencyByDays: boolean): string {
   return invoices
@@ -45,16 +52,36 @@ async function runOverdueQuery(env: Env, realmId: string | null, dueBeforeDate: 
   }
 }
 
-export async function runOverdueCheck(env: Env, realmId: string | null): Promise<ReportResult> {
+// `dryRun` computes and returns the real overdue-invoice count/total from a
+// real QuickBooks query, but never calls sendEmail — used for safe
+// production verification (this repo's own daily-check.yml workflow_dispatch
+// input, or a manual check) without risking a real reminder email. A Gmail
+// failure here is caught and categorized rather than left to bubble up as an
+// unhandled exception (the actual root cause of the 500s this function used
+// to produce) — every real (non-dry-run) outcome, success or failure, is
+// recorded to the audit log with a runId so a failed scheduled run is never
+// silent (see docs/INTEGRATION_HEALTH.md's "Daily Overdue Check" section).
+export async function runOverdueCheck(env: Env, realmId: string | null, opts: { dryRun?: boolean } = {}): Promise<ReportResult> {
+  const runId = crypto.randomUUID();
   const today = new Date();
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]!;
   const invoicesOrResult = await runOverdueQuery(env, realmId, firstOfMonth);
   if (!Array.isArray(invoicesOrResult)) return invoicesOrResult;
 
   const invoices = invoicesOrResult;
-  if (invoices.length === 0) return { status: 'ok', count: 0 };
+  if (invoices.length === 0) {
+    if (!opts.dryRun) await recordAuditEvent(env, { actor: null, action: 'scheduled_overdue_check_succeeded', metadata: { runId, reminderCount: 0 } });
+    return { status: 'ok', count: 0, runId, dryRun: opts.dryRun };
+  }
 
   const totalBalance = invoices.reduce((sum, inv) => sum + Number(inv.Balance), 0);
+
+  if (opts.dryRun) {
+    // Never builds/sends the email at all in dry-run mode — nothing here
+    // can trigger a real reminder, regardless of how many invoices exist.
+    return { status: 'ok', count: invoices.length, total: totalBalance, runId, dryRun: true };
+  }
+
   const html = `
     <div style="font-family:sans-serif;max-width:700px;margin:0 auto;padding:24px">
       <h2 style="color:#1a1a1a">Overdue Invoices</h2>
@@ -77,8 +104,28 @@ export async function runOverdueCheck(env: Env, realmId: string | null): Promise
       <p style="color:#999;font-size:12px">Sent from your QuickBooks integration</p>
     </div>`;
 
-  await sendEmail(env, await getRecipientEmails(env), `Overdue Invoices — ${invoices.length} unpaid ($${totalBalance.toFixed(2)})`, html);
-  return { status: 'ok', count: invoices.length, total: totalBalance };
+  if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) {
+    await recordAuditEvent(env, { actor: null, action: 'scheduled_overdue_check_failed', metadata: { runId, reminderCount: invoices.length, errorCategory: 'not_configured' } });
+    return { status: 'gmail-error', errorCategory: 'not_configured', runId };
+  }
+
+  try {
+    await sendEmail(env, await getRecipientEmails(env), `Overdue Invoices — ${invoices.length} unpaid ($${totalBalance.toFixed(2)})`, html);
+  } catch (e) {
+    // Same safe categorization convention as routes/internal.ts's
+    // /gmail/test-send and /gmail/signing-link — never the raw exception
+    // message (could echo an HTTP response body), only a small closed
+    // category. This is what used to escape uncaught here and become an
+    // opaque 500 with nothing recorded anywhere.
+    const message = e instanceof Error ? e.message : '';
+    const errorCategory = message.includes('access token') ? 'auth_failed' : 'send_failed';
+    console.error('[CRON overdue-check] send failed, runId=', runId, 'category=', errorCategory);
+    await recordAuditEvent(env, { actor: null, action: 'scheduled_overdue_check_failed', metadata: { runId, reminderCount: invoices.length, errorCategory } });
+    return { status: 'gmail-error', errorCategory, runId };
+  }
+
+  await recordAuditEvent(env, { actor: null, action: 'scheduled_overdue_check_succeeded', metadata: { runId, reminderCount: invoices.length } });
+  return { status: 'ok', count: invoices.length, total: totalBalance, runId };
 }
 
 export async function run30DayAlert(env: Env, realmId: string | null): Promise<ReportResult> {

@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '0 13 * * *'  # 8AM CST daily
   workflow_dispatch:
+    inputs:
+      dryRun:
+        description: 'Dry run — computes the overdue-invoice count but never sends the reminder email. Only usable via manual dispatch; the scheduled trigger always runs for real.'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   run-check:
@@ -11,11 +17,16 @@ jobs:
     steps:
       - name: Trigger overdue check on the Worker
         run: |
+          URL="${{ vars.WORKER_URL }}/api/cron/overdue-check"
+          if [ "${{ inputs.dryRun }}" = "true" ]; then
+            URL="${URL}?dryRun=true"
+            echo "Dry run — no reminder email will be sent."
+          fi
           for i in {1..3}; do
             echo "Attempt $i of 3..."
             if curl --fail-with-body -sS -X POST \
                 -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
-                "${{ vars.WORKER_URL }}/api/cron/overdue-check"; then
+                "$URL"; then
               echo "✓ Overdue check triggered successfully"
               exit 0
             fi

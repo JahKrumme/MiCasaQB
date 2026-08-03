@@ -11,6 +11,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../src/index';
 import { createTestEnv } from './helpers/testEnv';
+import { createFakeD1 } from './helpers/fakeD1';
+import { withFailingWrite } from './helpers/failingD1';
 import { TokenRepository, type TokenBundle } from '../src/lib/tokenRepository';
 import { listAuditLog } from '../src/lib/auditLog';
 import { signTestAssertion } from './helpers/signAssertion';
@@ -46,6 +48,11 @@ let fetchMock: ReturnType<typeof vi.fn>;
 function stubQboAndGmail(opts: {
   invoices?: Record<string, unknown>[];
   gmailTokenStatus?: number;
+  // Google's own short OAuth error code (RFC 6749 §5.2) in the token
+  // endpoint's JSON error body — 'invalid_grant' is what a genuinely
+  // revoked/expired refresh token returns. `null` simulates a non-JSON (or
+  // code-less) error body, to exercise the 'unknown_auth_error' fallback.
+  gmailTokenErrorCode?: string | null;
   gmailSendStatus?: number;
 }) {
   const invoices = opts.invoices ?? [];
@@ -55,9 +62,11 @@ function stubQboAndGmail(opts: {
     }
     if (url === GMAIL_TOKEN_URL) {
       const status = opts.gmailTokenStatus ?? 200;
-      return status === 200
-        ? new Response(JSON.stringify({ access_token: 'fake-gmail-access-token' }), { status: 200 })
-        : new Response('unauthorized', { status });
+      if (status === 200) return new Response(JSON.stringify({ access_token: 'fake-gmail-access-token' }), { status: 200 });
+      const errorCode = opts.gmailTokenErrorCode === undefined ? 'invalid_grant' : opts.gmailTokenErrorCode;
+      return errorCode === null
+        ? new Response('unauthorized', { status })
+        : new Response(JSON.stringify({ error: errorCode, error_description: 'Token has been expired or revoked.' }), { status });
     }
     if (url === GMAIL_SEND_URL) {
       const status = opts.gmailSendStatus ?? 200;
@@ -161,15 +170,15 @@ describe('POST /api/cron/overdue-check — Gmail failures no longer produce an u
     expect(log.some(e => e.action === 'scheduled_overdue_check_failed' && (e.metadata as { errorCategory?: string })?.errorCategory === 'not_configured')).toBe(true);
   });
 
-  it('returns 502 auth_failed (not a bare 500) when the Gmail token refresh fails, and never attempts a send', async () => {
+  it('returns 502 invalid_grant (not a bare 500) when Google rejects the refresh token itself, and never attempts a send', async () => {
     const env = createTestEnv();
     await connectRealm(env);
-    stubQboAndGmail({ invoices: [overdueInvoice()], gmailTokenStatus: 401 });
+    stubQboAndGmail({ invoices: [overdueInvoice()], gmailTokenStatus: 400, gmailTokenErrorCode: 'invalid_grant' });
     const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
     expect(res.status).toBe(502);
     const body = (await res.json()) as { status: string; errorCategory: string; runId: string };
     expect(body.status).toBe('gmail-error');
-    expect(body.errorCategory).toBe('auth_failed');
+    expect(body.errorCategory).toBe('invalid_grant');
 
     const sendCalls = fetchMock.mock.calls.filter(([url]) => String(url) === GMAIL_SEND_URL);
     expect(sendCalls).toHaveLength(0);
@@ -177,8 +186,8 @@ describe('POST /api/cron/overdue-check — Gmail failures no longer produce an u
     const log = await listAuditLog(env, 10);
     const entry = log.find(e => e.action === 'scheduled_overdue_check_failed');
     expect(entry).toBeTruthy();
-    expect(entry!.metadata).toMatchObject({ errorCategory: 'auth_failed', reminderCount: 1, runId: body.runId });
-    expect(JSON.stringify(entry)).not.toMatch(/fake-gmail-access-token|Test Customer/);
+    expect(entry!.metadata).toMatchObject({ errorCategory: 'invalid_grant', reminderCount: 1, runId: body.runId });
+    expect(JSON.stringify(entry)).not.toMatch(/fake-gmail-access-token|Test Customer|Token has been expired or revoked/);
   });
 
   it('returns 502 send_failed (not a bare 500) when Gmail rejects the send', async () => {
@@ -280,14 +289,14 @@ describe('GET /internal/health/detailed — surfaces the last scheduled-run outc
   it('reflects a failed run as status "failure" with its error category', async () => {
     const env = createTestEnv();
     await connectRealm(env);
-    stubQboAndGmail({ invoices: [overdueInvoice()], gmailTokenStatus: 401 });
+    stubQboAndGmail({ invoices: [overdueInvoice()], gmailTokenStatus: 400, gmailTokenErrorCode: 'invalid_grant' });
     await app.fetch(new Request(`${BASE}/api/cron/overdue-check`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
 
     const t = await serviceToken(env.FINANCE_INTERNAL_SECRET!);
     const res = await app.fetch(new Request(`${BASE}/internal/health/detailed`, { headers: { 'X-Service-Assertion': t } }), env);
     const body = (await res.json()) as { lastOverdueCheckRun: { status: string; errorCategory: string | null; reminderCount: number | null } };
     expect(body.lastOverdueCheckRun.status).toBe('failure');
-    expect(body.lastOverdueCheckRun.errorCategory).toBe('auth_failed');
+    expect(body.lastOverdueCheckRun.errorCategory).toBe('invalid_grant');
     expect(body.lastOverdueCheckRun.reminderCount).toBe(1);
   });
 
@@ -318,5 +327,127 @@ describe('GET /internal/health/detailed — surfaces the last scheduled-run outc
     const body = (await res.json()) as { lastOverdueCheckRun: { status: string } };
     // Still reflects the earlier real (failed) run, not the dry run.
     expect(body.lastOverdueCheckRun.status).toBe('failure');
+  });
+});
+
+describe('POST /api/cron/overdue-check — precise Gmail failure categories (not a fragile substring match)', () => {
+  it('categorizes a genuinely rejected refresh token as invalid_grant', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    stubQboAndGmail({ invoices: [overdueInvoice()], gmailTokenStatus: 400, gmailTokenErrorCode: 'invalid_grant' });
+    const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { errorCategory: string };
+    expect(body.errorCategory).toBe('invalid_grant');
+  });
+
+  it('categorizes a 429 from the token endpoint as rate_limited, distinct from invalid_grant', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    stubQboAndGmail({ invoices: [overdueInvoice()], gmailTokenStatus: 429, gmailTokenErrorCode: 'rate_limit_exceeded' });
+    const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { errorCategory: string };
+    expect(body.errorCategory).toBe('rate_limited');
+  });
+
+  it('categorizes a 5xx from the token endpoint as transient, distinct from invalid_grant', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    stubQboAndGmail({ invoices: [overdueInvoice()], gmailTokenStatus: 503, gmailTokenErrorCode: null });
+    const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { errorCategory: string };
+    expect(body.errorCategory).toBe('transient');
+  });
+
+  it('never logs error_description (only the short OAuth error code) into the audit trail', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    stubQboAndGmail({ invoices: [overdueInvoice()], gmailTokenStatus: 400, gmailTokenErrorCode: 'invalid_grant' });
+    await app.fetch(new Request(`${BASE}/api/cron/overdue-check`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    const log = await listAuditLog(env, 10);
+    expect(JSON.stringify(log)).not.toContain('Token has been expired or revoked');
+  });
+});
+
+describe('POST /api/cron/overdue-check — audit-log failures never turn a real send into a reported failure', () => {
+  it('a successful send still returns 200 even if recording the success audit event fails (never a retry-triggering failure after a real send)', async () => {
+    const env = createTestEnv({ DB: withFailingWrite(createFakeD1(), 'audit_log') });
+    await connectRealm(env);
+    stubQboAndGmail({ invoices: [overdueInvoice()] });
+    const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    expect(res.status).toBe(200);
+    const sendCalls = fetchMock.mock.calls.filter(([url]) => String(url) === GMAIL_SEND_URL);
+    expect(sendCalls).toHaveLength(1);
+  });
+});
+
+describe('POST /api/cron/overdue-check?diagnostic=true — exercises the real send path, never sends', () => {
+  it('reports ok:true with the real invoice count once every phase (recipients, message build, Gmail auth) succeeds', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    stubQboAndGmail({ invoices: [overdueInvoice(), overdueInvoice({ DocNumber: '1002' })] });
+    const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check?diagnostic=true`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; phase: string; category: string | null; invoiceCount: number; hasRecipients: boolean; gmailAuthOk: boolean; messageBuilt: boolean };
+    expect(body).toMatchObject({ ok: true, phase: 'ready', category: null, invoiceCount: 2, hasRecipients: true, gmailAuthOk: true, messageBuilt: true });
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === GMAIL_SEND_URL)).toBe(false);
+  });
+
+  it('reports phase quickbooks_query / category no_token when QuickBooks is not connected, without calling Gmail at all', async () => {
+    const env = createTestEnv();
+    const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check?diagnostic=true`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; phase: string; category: string };
+    expect(body.ok).toBe(false);
+    expect(body.phase).toBe('quickbooks_query');
+    expect(body.category).toBe('no_token');
+  });
+
+  it('reports phase gmail_auth / category invalid_grant when the refresh token is rejected — the exact real-path failure, reproduced safely', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    stubQboAndGmail({ invoices: [overdueInvoice()], gmailTokenStatus: 400, gmailTokenErrorCode: 'invalid_grant' });
+    const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check?diagnostic=true`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; phase: string; category: string; invoiceCount: number; hasRecipients: boolean; gmailAuthOk: boolean };
+    expect(body.ok).toBe(false);
+    expect(body.phase).toBe('gmail_auth');
+    expect(body.category).toBe('invalid_grant');
+    expect(body.invoiceCount).toBe(1);
+    expect(body.hasRecipients).toBe(true);
+    expect(body.gmailAuthOk).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === GMAIL_SEND_URL)).toBe(false);
+  });
+
+  it('reports phase recipients / category recipient_invalid when no active users exist to receive the digest', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    // Explicitly disable the fallback recipient by inserting a disabled-only user set — getRecipientEmails() only
+    // falls back to a hardcoded address when there are zero users at all; with only disabled users, active.length is 0
+    // too, so it still falls back today. To exercise a genuinely invalid recipient, insert an active user with a
+    // malformed email directly.
+    await env.DB.prepare(`INSERT INTO users (id, email, password_hash, password_salt, iterations, role, disabled, force_password_change, created_at, updated_at) VALUES ('u1', 'not-an-email', 'x', 'y', 1, 'staff', 0, 0, 0, 0)`).run();
+    stubQboAndGmail({ invoices: [overdueInvoice()] });
+    const res = await app.fetch(new Request(`${BASE}/api/cron/overdue-check?diagnostic=true`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; phase: string; category: string; hasRecipients: boolean };
+    expect(body.ok).toBe(false);
+    expect(body.phase).toBe('recipients');
+    expect(body.category).toBe('recipient_invalid');
+    expect(body.hasRecipients).toBe(false);
+    // Never reaches Gmail at all once recipients are invalid.
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('googleapis'))).toBe(false);
+  });
+
+  it('never calls the Gmail send endpoint under any diagnostic outcome, and records nothing to the audit log', async () => {
+    const env = createTestEnv();
+    await connectRealm(env);
+    stubQboAndGmail({ invoices: [overdueInvoice()] });
+    await app.fetch(new Request(`${BASE}/api/cron/overdue-check?diagnostic=true`, { method: 'POST', headers: { 'X-Cron-Secret': env.CRON_SECRET! } }), env);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === GMAIL_SEND_URL)).toBe(false);
+    const log = await listAuditLog(env, 10);
+    expect(log.some(e => e.action === 'scheduled_overdue_check_succeeded' || e.action === 'scheduled_overdue_check_failed')).toBe(false);
   });
 });

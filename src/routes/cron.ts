@@ -3,19 +3,28 @@ import type { AppEnv } from '../honoTypes';
 import { requireCronSecret } from '../middleware/auth';
 import { TokenRepository } from '../lib/tokenRepository';
 import { recordAuditEvent } from '../lib/auditLog';
-import { runKanCareReminder, runMonthlyInvoices, runOverdueCheck, run30DayAlert } from '../lib/reports';
+import { runKanCareReminder, runMonthlyInvoices, runOverdueCheck, run30DayAlert, diagnoseOverdueDigest } from '../lib/reports';
 
 // Triggered by GitHub Actions on a schedule (see .github/workflows/*.yml),
 // authenticated with a shared secret since there is no browser session here.
 export const cronRoutes = new Hono<AppEnv>();
 cronRoutes.use('*', requireCronSecret);
 
-// `?dryRun=true` computes the real invoice count without ever calling
-// Gmail — safe to hit against production any time (e.g.
-// daily-check.yml's workflow_dispatch input, or a manual curl) to verify
-// the endpoint without risking a real reminder email. The real scheduled
-// cron trigger never sets this — it always has its normal, real effect.
+// `?diagnostic=true` runs the REAL send path — real QuickBooks query, the
+// real digest payload, real recipient validation, a real Gmail token
+// refresh — and stops immediately before the network call that would
+// actually deliver the email. Never sends anything under any outcome.
+// Purely diagnostic (never audited, never affects the "last run" status
+// Integration Health reads) — use this to investigate a failure without
+// risking a duplicate real send. Checked before `dryRun` so the two never
+// interact; `dryRun`'s existing contract/response shape is unchanged.
 cronRoutes.post('/overdue-check', async c => {
+  if (c.req.query('diagnostic') === 'true') {
+    const realmId = await new TokenRepository(c.env).getActiveRealmId();
+    const diagnostic = await diagnoseOverdueDigest(c.env, realmId);
+    return c.json(diagnostic);
+  }
+
   const dryRun = c.req.query('dryRun') === 'true';
   try {
     const realmId = await new TokenRepository(c.env).getActiveRealmId();
@@ -26,8 +35,9 @@ cronRoutes.post('/overdue-check', async c => {
     if (result.status === 'gmail-error') {
       console.error('[CRON overdue-check] failed, runId=', result.runId, 'status=failure', 'errorCategory=', result.errorCategory);
       // Same convention as /internal/gmail/test-send: 'not_configured' is a
-      // setup gap (503, matches the no-token/token-error branches above),
-      // 'auth_failed'/'send_failed' are real upstream failures (502).
+      // setup gap (503, matches the no-token/token-error branches above);
+      // every other category (invalid_grant/rate_limited/transient/
+      // unknown_auth_error/send_failed) is a real upstream failure (502).
       return c.json({ status: result.status, errorCategory: result.errorCategory, runId: result.runId }, result.errorCategory === 'not_configured' ? 503 : 502);
     }
     console.log('[CRON overdue-check] runId=', result.runId, 'reminderCount=', result.count, 'status=', dryRun ? 'dry-run' : 'success');

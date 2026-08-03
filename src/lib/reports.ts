@@ -1,8 +1,10 @@
 import type { Env } from '../env';
 import { qbQuery } from './qboClient';
-import { sendEmail, verifyGmailAuth } from './gmail';
+import { sendEmail, verifyGmailAuth, diagnoseGmailSend, GmailAuthError, type GmailSendDiagnostic } from './gmail';
 import { getRecipientEmails } from './users';
 import { recordAuditEvent } from './auditLog';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface QboInvoice {
   DocNumber?: string;
@@ -20,9 +22,14 @@ export type ReportResult =
   // Gmail (not QuickBooks) failed — the invoice query itself succeeded, but
   // sending the digest email threw. Distinct from 'token-error' (a
   // QuickBooks/Intuit problem) so callers/Integration Health can tell the
-  // two apart. errorCategory is a small, closed, safe set — never a raw
-  // exception message (see runOverdueCheck below).
-  | { status: 'gmail-error'; errorCategory: 'not_configured' | 'auth_failed' | 'send_failed'; runId: string };
+  // two apart. errorCategory is a small, closed, safe set derived from
+  // GmailAuthError's own category (never a raw exception message or
+  // response body) — 'invalid_grant' means the refresh token itself is
+  // rejected, 'rate_limited'/'transient' mean Google's token endpoint is
+  // temporarily unhappy (worth retrying later, not a broken credential),
+  // 'send_failed' means auth succeeded but the actual message send was
+  // rejected.
+  | { status: 'gmail-error'; errorCategory: 'not_configured' | 'invalid_grant' | 'rate_limited' | 'transient' | 'unknown_auth_error' | 'send_failed'; runId: string };
 
 function invoiceRows(invoices: QboInvoice[], today: Date, urgencyByDays: boolean): string {
   return invoices
@@ -40,6 +47,35 @@ function invoiceRows(invoices: QboInvoice[], today: Date, urgencyByDays: boolean
       </tr>`;
     })
     .join('');
+}
+
+// Single source of truth for the overdue-digest email's subject/body — used
+// by both the real send (runOverdueCheck) and the diagnostic path
+// (diagnoseOverdueDigest) so the diagnostic is never a re-implementation
+// that could quietly drift from what's actually sent.
+function buildOverdueDigestEmail(invoices: QboInvoice[], today: Date, totalBalance: number): { subject: string; html: string } {
+  const html = `
+    <div style="font-family:sans-serif;max-width:700px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">Overdue Invoices</h2>
+      <p style="color:#555">As of <strong>${today.toISOString().split('T')[0]}</strong> — ${invoices.length} invoice(s) overdue</p>
+      <table style="width:100%;border-collapse:collapse;margin-top:16px">
+        <thead><tr style="background:#f5f5f5">
+          <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Invoice</th>
+          <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Customer</th>
+          <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Due Date</th>
+          <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Days Overdue</th>
+          <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Balance</th>
+        </tr></thead>
+        <tbody>${invoiceRows(invoices, today, true)}</tbody>
+        <tfoot><tr style="background:#fafafa">
+          <td colspan="4" style="padding:12px 16px;font-weight:700;text-align:right">Total Outstanding:</td>
+          <td style="padding:12px 16px;font-weight:700;color:#c0392b">$${totalBalance.toFixed(2)}</td>
+        </tr></tfoot>
+      </table>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+      <p style="color:#999;font-size:12px">Sent from your QuickBooks integration</p>
+    </div>`;
+  return { subject: `Overdue Invoices — ${invoices.length} unpaid ($${totalBalance.toFixed(2)})`, html };
 }
 
 async function runOverdueQuery(env: Env, realmId: string | null, dueBeforeDate: string): Promise<QboInvoice[] | ReportResult> {
@@ -77,7 +113,11 @@ export async function runOverdueCheck(env: Env, realmId: string | null, opts: { 
   const gmailAuth = opts.dryRun ? await verifyGmailAuth(env) : null;
 
   if (invoices.length === 0) {
-    if (!opts.dryRun) await recordAuditEvent(env, { actor: null, action: 'scheduled_overdue_check_succeeded', metadata: { runId, reminderCount: 0 } });
+    if (!opts.dryRun) {
+      await recordAuditEvent(env, { actor: null, action: 'scheduled_overdue_check_succeeded', metadata: { runId, reminderCount: 0 } }).catch(auditErr => {
+        console.error('[CRON overdue-check] failed to record success audit event, runId=', runId, auditErr instanceof Error ? auditErr.message : 'unknown');
+      });
+    }
     return {
       status: 'ok', count: 0, runId, dryRun: opts.dryRun,
       ...(gmailAuth ? { gmailAuthOk: gmailAuth.ok, gmailAuthErrorCategory: gmailAuth.ok ? undefined : gmailAuth.errorCategory } : {})
@@ -95,27 +135,7 @@ export async function runOverdueCheck(env: Env, realmId: string | null, opts: { 
     };
   }
 
-  const html = `
-    <div style="font-family:sans-serif;max-width:700px;margin:0 auto;padding:24px">
-      <h2 style="color:#1a1a1a">Overdue Invoices</h2>
-      <p style="color:#555">As of <strong>${today.toISOString().split('T')[0]}</strong> — ${invoices.length} invoice(s) overdue</p>
-      <table style="width:100%;border-collapse:collapse;margin-top:16px">
-        <thead><tr style="background:#f5f5f5">
-          <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Invoice</th>
-          <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Customer</th>
-          <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Due Date</th>
-          <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Days Overdue</th>
-          <th style="padding:12px 16px;text-align:left;font-size:13px;color:#666">Balance</th>
-        </tr></thead>
-        <tbody>${invoiceRows(invoices, today, true)}</tbody>
-        <tfoot><tr style="background:#fafafa">
-          <td colspan="4" style="padding:12px 16px;font-weight:700;text-align:right">Total Outstanding:</td>
-          <td style="padding:12px 16px;font-weight:700;color:#c0392b">$${totalBalance.toFixed(2)}</td>
-        </tr></tfoot>
-      </table>
-      <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
-      <p style="color:#999;font-size:12px">Sent from your QuickBooks integration</p>
-    </div>`;
+  const { subject, html } = buildOverdueDigestEmail(invoices, today, totalBalance);
 
   if (!env.GMAIL_CLIENT_ID || !env.GMAIL_CLIENT_SECRET || !env.GMAIL_REFRESH_TOKEN) {
     await recordAuditEvent(env, { actor: null, action: 'scheduled_overdue_check_failed', metadata: { runId, reminderCount: invoices.length, errorCategory: 'not_configured' } });
@@ -123,22 +143,93 @@ export async function runOverdueCheck(env: Env, realmId: string | null, opts: { 
   }
 
   try {
-    await sendEmail(env, await getRecipientEmails(env), `Overdue Invoices — ${invoices.length} unpaid ($${totalBalance.toFixed(2)})`, html);
+    await sendEmail(env, await getRecipientEmails(env), subject, html);
   } catch (e) {
-    // Same safe categorization convention as routes/internal.ts's
-    // /gmail/test-send and /gmail/signing-link — never the raw exception
-    // message (could echo an HTTP response body), only a small closed
-    // category. This is what used to escape uncaught here and become an
-    // opaque 500 with nothing recorded anywhere.
-    const message = e instanceof Error ? e.message : '';
-    const errorCategory = message.includes('access token') ? 'auth_failed' : 'send_failed';
+    // Derived from GmailAuthError's own structured category — never a
+    // fragile substring match against the exception message (which broke
+    // down as soon as the message text needed to change) and never the raw
+    // exception message or a response body itself. This is what used to
+    // escape uncaught here and become an opaque 500 with nothing recorded
+    // anywhere.
+    const errorCategory = e instanceof GmailAuthError ? e.category : 'send_failed';
     console.error('[CRON overdue-check] send failed, runId=', runId, 'category=', errorCategory);
-    await recordAuditEvent(env, { actor: null, action: 'scheduled_overdue_check_failed', metadata: { runId, reminderCount: invoices.length, errorCategory } });
+    // Audit logging failure here must never surface as this request's own
+    // failure — a non-2xx response after a real (possibly already-sent)
+    // email would make GitHub Actions retry the whole request, which could
+    // trigger a real duplicate send. Best-effort only.
+    await recordAuditEvent(env, { actor: null, action: 'scheduled_overdue_check_failed', metadata: { runId, reminderCount: invoices.length, errorCategory } }).catch(auditErr => {
+      console.error('[CRON overdue-check] failed to record failure audit event, runId=', runId, auditErr instanceof Error ? auditErr.message : 'unknown');
+    });
     return { status: 'gmail-error', errorCategory, runId };
   }
 
-  await recordAuditEvent(env, { actor: null, action: 'scheduled_overdue_check_succeeded', metadata: { runId, reminderCount: invoices.length } });
+  // The email has already been sent successfully at this point — audit
+  // logging must never turn a real, successful send into a reported
+  // failure (which would make GitHub Actions retry and risk a real
+  // duplicate send). Best-effort only.
+  await recordAuditEvent(env, { actor: null, action: 'scheduled_overdue_check_succeeded', metadata: { runId, reminderCount: invoices.length } }).catch(auditErr => {
+    console.error('[CRON overdue-check] failed to record success audit event, runId=', runId, auditErr instanceof Error ? auditErr.message : 'unknown');
+  });
   return { status: 'ok', count: invoices.length, total: totalBalance, runId };
+}
+
+export type OverdueDigestDiagnosticPhase = 'quickbooks_query' | 'recipients' | 'message_build' | 'gmail_auth' | 'ready';
+export type OverdueDigestDiagnosticCategory =
+  | 'no_token' | 'quickbooks_query_failed' // quickbooks_query phase
+  | 'recipient_invalid' // recipients phase
+  | 'message_build_failed' // message_build phase
+  | 'not_configured' | 'invalid_grant' | 'rate_limited' | 'transient' | 'unknown_auth_error'; // gmail_auth phase
+
+export interface OverdueDigestDiagnostic {
+  ok: boolean;
+  phase: OverdueDigestDiagnosticPhase;
+  category: OverdueDigestDiagnosticCategory | null;
+  invoiceCount: number;
+  hasRecipients: boolean;
+  gmailAuthOk: boolean;
+  messageBuilt: boolean;
+}
+
+// Exercises the REAL send path end to end — real QuickBooks query, the
+// exact real digest payload (buildOverdueDigestEmail, the same function the
+// real send uses), real recipient validation, and a real Gmail token
+// refresh (never a send) — and stops immediately before the network call
+// that would actually deliver the email. Never calls sendEmail/SEND_URL
+// under any outcome. See src/routes/cron.ts's `?diagnostic=true`.
+export async function diagnoseOverdueDigest(env: Env, realmId: string | null): Promise<OverdueDigestDiagnostic> {
+  const today = new Date();
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]!;
+  const invoicesOrResult = await runOverdueQuery(env, realmId, firstOfMonth);
+  if (!Array.isArray(invoicesOrResult)) {
+    const category = invoicesOrResult.status === 'no-token' ? 'no_token' : 'quickbooks_query_failed';
+    return { ok: false, phase: 'quickbooks_query', category, invoiceCount: 0, hasRecipients: false, gmailAuthOk: false, messageBuilt: false };
+  }
+  const invoices = invoicesOrResult;
+  const totalBalance = invoices.reduce((sum, inv) => sum + Number(inv.Balance), 0);
+
+  const recipients = await getRecipientEmails(env);
+  const recipientList = recipients.split(',').map(r => r.trim()).filter(Boolean);
+  const hasRecipients = recipientList.length > 0 && recipientList.every(r => EMAIL_RE.test(r));
+  if (!hasRecipients) {
+    return { ok: false, phase: 'recipients', category: 'recipient_invalid', invoiceCount: invoices.length, hasRecipients: false, gmailAuthOk: false, messageBuilt: false };
+  }
+
+  // The exact same subject/html the real send would build — never a
+  // separately-maintained diagnostic version that could quietly drift.
+  const { subject, html } = buildOverdueDigestEmail(invoices, today, totalBalance);
+
+  const gmailDiag: GmailSendDiagnostic = await diagnoseGmailSend(env, recipients, subject, html);
+  if (!gmailDiag.ok) {
+    return {
+      ok: false,
+      phase: gmailDiag.phase === 'message_build' ? 'message_build' : 'gmail_auth',
+      category: gmailDiag.category,
+      invoiceCount: invoices.length, hasRecipients: true,
+      gmailAuthOk: gmailDiag.gmailAuthOk, messageBuilt: gmailDiag.messageBuilt
+    };
+  }
+
+  return { ok: true, phase: 'ready', category: null, invoiceCount: invoices.length, hasRecipients: true, gmailAuthOk: true, messageBuilt: true };
 }
 
 export async function run30DayAlert(env: Env, realmId: string | null): Promise<ReportResult> {
